@@ -4,7 +4,7 @@
 
 | 组件 | 说明 |
 |---|---|
-| `mks_1.4.deb` | Tweak（注入 SpringBoard / 设置 / 微信 / App Store 等进程），负责 hook 设备信息 API |
+| `mks_1.5.deb` | Tweak（注入 SpringBoard / 设置 / 微信 / App Store 等进程），负责 hook 设备信息 API |
 | `MKS-spoofer.ipa` | 桌面 App，提供「一键改机 / 还原设备」界面 |
 
 改机参数**自动生成**，每次点击都会随机生成一套新的，并且强制满足格式校验规则，不需要手动编辑任何配置文件。
@@ -32,6 +32,20 @@
 | `InternationalMobileEquipmentIdentity2` | IMEI2（前 14 位） |
 | `EthernetMacAddress` / `BluetoothAddress` | MAC 地址 |
 | `ChipID` | 芯片段，如 `T8507` |
+
+以及 **IOKit** 层（很多风控读这里）：
+
+| IOKit 属性 | 伪造内容 |
+|---|---|
+| `IOPlatformSerialNumber` | 序列号 |
+| `IOPlatformUUID` | 由 UDID 派生的 UUID |
+
+以及 **UIDevice / IDFV / IDFA**：
+
+| API | 伪造内容 |
+|---|---|
+| `-[UIDevice identifierForVendor]` | 由 UDID 派生的 UUID |
+| `-[ASIdentifierManager advertisingIdentifier]` | 由 UDID 派生的 UUID |
 
 以及 sysctl 层：
 
@@ -76,7 +90,7 @@
 **方式 A：deb 安装（Sileo / Filza / dpkg）**
 
 ```bash
-dpkg -i mks_1.4.deb
+dpkg -i mks_1.5.deb
 # 或把 deb 传到手机，用 Sileo「安装本地 deb」
 ```
 
@@ -181,7 +195,7 @@ zip -qr MKS-spoofer.ipa Payload
 │   ├── mks.m           # Tweak 源码（MobileGestalt / sysctl hook）
 │   └── mks.plist       # 注入目标配置
 ├── dist/
-│   ├── mks_1.4.deb     # 编译好的 Tweak
+│   ├── mks_1.5.deb     # 编译好的 Tweak
 │   └── MKS-spoofer.ipa # 编译好的 App
 └── docs/
     └── install.md
@@ -201,7 +215,8 @@ Tweak 按以下顺序读取配置，找到第一个就用它：
 
 ## 已知限制
 
-- 只覆盖 MobileGestalt 与 sysctl 两层，未覆盖 IOKit（`IOPlatformSerialNumber`）、IDFV/IDFA 等，如有需要可自行扩展 `answer_for_key` 映射表
+- 覆盖 MobileGestalt / sysctl / IOKit / UIDevice-IDFV / ASIdentifierManager-IDFA 五层
+- 未覆盖：`board-id`（IOKit 返回 Data 类型）、`IODeviceTree` 里的部分节点、网络侧指纹
 - 参数为随机生成，不具备苹果服务器的真实性
 - 需要越狱环境，非越狱设备无法使用
 
