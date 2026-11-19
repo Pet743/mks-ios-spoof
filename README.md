@@ -225,6 +225,32 @@ Tweak 按以下顺序读取配置，找到第一个就用它：
 
 改机日志：`/var/mobile/mks.log`
 
+
+---
+
+## 技术边界（重要，实测结论）
+
+改机能覆盖的是**软件层**，覆盖不到**硬件层**。实测验证如下：
+
+| 层 | 能否伪装 | 依据 |
+|---|---|---|
+| MobileGestalt（ProductType/SerialNumber/...） | ✅ | 实测返回伪值 |
+| IOKit（IOPlatformSerialNumber/IOPlatformUUID） | ✅ | 实测返回伪值 |
+| UIDevice-IDFV | ✅ | 实测返回伪值 |
+| sysctl（hw.machine/hw.model/osversion） | ✅ | 实测返回伪值 |
+| keychain 账号数据 | 可读写 | 实测（504 条，无 adi） |
+| **硬件设备身份（adi）** | ❌ | `adid` 的 entitlements 含 `FairPlayIOKitUserClient.access`，设备标识来自 **FairPlay 硬件**，软件无法伪造 |
+
+### 这意味着
+
+- **第三方 App**（微信、游戏、风控 SDK）读设备信息走 MG/IOKit/IDFV → 改机有效
+- **Apple 自家服务**（App Store / Apple ID）用硬件级 adi 识别设备 → **改机无效**
+- 因此「同一设备登录多个 Apple ID 被锁定」这类限制，改机无法绕过；这是 iOS 安全架构（Secure Enclave + FairPlay）的根基
+
+### 关于 dpp
+
+反编译 dpp 的 `dppd` 与 `dipp.dylib` 确认：其 daemon 里只有 `posix_spawn("killall -9 SpringBoard")`，dylib 内无 keychain / IOKit 硬件访问代码。它做到的是**和本项目同一层**（MobileGestalt 级伪装）。
+
 ## 已知限制
 
 - 覆盖 MobileGestalt / sysctl / IOKit / UIDevice-IDFV / ASIdentifierManager-IDFA 五层
