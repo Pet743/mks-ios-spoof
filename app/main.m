@@ -1,4 +1,8 @@
 #import <UIKit/UIKit.h>
+#include <spawn.h>
+#include <dlfcn.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
 
 static NSString *gParams = @"";
 
@@ -58,6 +62,20 @@ static NSString *genParams(void) {
     NSString *ios = [NSString stringWithFormat:@"16.%d.%d", arc4random_uniform(8), arc4random_uniform(10)];
     return [@[ser, imei, imei2, mac1, mac2, ecid, udid, ser, model, part, board, chip, build, ios]
             componentsJoinedByString:@"----"];
+}
+
+static void do_respring(void) {
+    // 通知 root 守护进程 mksd 执行 respring（同 dpp 的 dppd 架构）
+    int fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (fd >= 0) {
+        struct sockaddr_in a;
+        memset(&a, 0, sizeof(a));
+        a.sin_family = AF_INET;
+        a.sin_port = htons(33236);
+        a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        sendto(fd, "RESPRING", 8, 0, (struct sockaddr *)&a, sizeof(a));
+        close(fd);
+    }
 }
 
 @interface MKSViewController : UIViewController
@@ -130,9 +148,13 @@ static NSString *genParams(void) {
     gParams = genParams();
     [self writeConfig:gParams];
     UIAlertController *a = [UIAlertController alertControllerWithTitle:@"改机成功"
-        message:gParams preferredStyle:UIAlertControllerStyleAlert];
-    [a addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
+        message:[gParams stringByAppendingString:@"\n\n3 秒后自动重启桌面"]
+        preferredStyle:UIAlertControllerStyleAlert];
+    [a addAction:[UIAlertAction actionWithTitle:@"立即重启" style:UIAlertActionStyleDefault
+                                         handler:^(UIAlertAction *x) { do_respring(); }]];
     [self presentViewController:a animated:YES completion:nil];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{ do_respring(); });
 }
 - (void)doRestore {
     [[NSFileManager defaultManager] removeItemAtPath:[self configPath] error:nil];
