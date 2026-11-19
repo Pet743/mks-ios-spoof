@@ -10,11 +10,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <glob.h>
-#include <IOKit/IOKitLib.h>
-#import <UIKit/UIKit.h>
-#import <objc/runtime.h>
-
-extern void MSHookMessageEx(Class cls, SEL sel, IMP imp, IMP *result);
 
 extern void MSHookFunction(void *symbol, void *replace, void **result);
 
@@ -39,8 +34,6 @@ static void logline(const char *fmt, ...) {
 
 static CFStringRef cf(const char *s) { return CFStringCreateWithCString(kCFAllocatorDefault, s, kCFStringEncodingUTF8); }
 
-static void build_uuid(void);
-
 static void split_params(const char *line) {
     char buf[2048];
     strncpy(buf, line, sizeof(buf)-1); buf[sizeof(buf)-1]=0;
@@ -54,7 +47,6 @@ static void split_params(const char *line) {
     strncpy(g_part, fields[9], 63);  strncpy(g_board, fields[10], 63);
     strncpy(g_chip, fields[11], 63); strncpy(g_build, fields[12], 63);
     strncpy(g_ios, fields[13], 63);
-    build_uuid();
     g_active = 1;
     if (g_cf_ser) { /* 重建 CF 对象 */ }
     g_cf_ser = cf(g_ser); g_cf_imei1 = cf(g_imei1); g_cf_imei2 = cf(g_imei2);
@@ -79,8 +71,20 @@ static int read_cfg_path(const char *path) {
     return g_active;
 }
 
+// 检查 respring 标志文件（只有 SpringBoard 响应）
+static void check_respring(void) {
+    struct stat st;
+    if (stat("/var/mobile/Media/mks.respring", &st) != 0) return;
+    const char *pn = getprogname();
+    if (!pn || strcmp(pn, "SpringBoard") != 0) return;
+    unlink("/var/mobile/Media/mks.respring");
+    logline("[*] respring flag detected -> exiting SpringBoard");
+    kill(getpid(), SIGTERM);
+}
+
 // 返回 1 表示启用伪造
 static int cfg_active(void) {
+    check_respring();
     if (read_cfg_path("/var/mobile/Media/mks.config")) return 1;
     if (read_cfg_path("/var/mobile/Library/Preferences/com.mks.spoof.config")) return 1;
     glob_t g;
@@ -138,72 +142,6 @@ static CFTypeRef my_MGCopyAnswer(CFStringRef key) {
     cfg_active();
     CFStringRef r = answer_for_key(key);
     return r ? (CFTypeRef)CFRetain(r) : orig_MGCopyAnswer(key);
-}
-
-
-// ---------------- IOKit ----------------
-static char g_uuid[64];
-
-static void build_uuid(void) {
-    // 从 UDID（40 hex）取 32 位拼成 8-4-4-4-12 的 UUID
-    const char *u = g_udid;
-    char hex[33] = {0};
-    size_t n = 0;
-    for (size_t i = 0; u[i] && n < 32; i++) {
-        char c = u[i];
-        if (isxdigit((unsigned char)c)) hex[n++] = (char)toupper((unsigned char)c);
-    }
-    while (n < 32) hex[n++] = '0';
-    snprintf(g_uuid, sizeof(g_uuid), "%.8s-%.4s-%.4s-%.4s-%.12s",
-             hex, hex + 8, hex + 12, hex + 16, hex + 20);
-}
-
-static CFTypeRef (*orig_IORegistryEntryCreateCFProperty)(io_registry_entry_t, CFStringRef, CFAllocatorRef, IOOptionBits);
-static CFTypeRef my_IORegistryEntryCreateCFProperty(io_registry_entry_t entry, CFStringRef key,
-                                                    CFAllocatorRef alloc, IOOptionBits options) {
-    cfg_active();
-    if (g_active && key) {
-        char kb[128] = {0};
-        if (CFStringGetCString(key, kb, sizeof(kb), kCFStringEncodingUTF8)) {
-            CFStringRef v = NULL;
-            if (!strcmp(kb, "IOPlatformSerialNumber")) v = g_cf_ser;
-            else if (!strcmp(kb, "IOPlatformUUID")) {
-                static CFStringRef uuid_cf;
-                if (!uuid_cf) uuid_cf = cf(g_uuid);
-                v = uuid_cf;
-            }
-            if (v) {
-                logline("[IOKit] %s -> spoofed", kb);
-                return CFStringCreateCopy(alloc ? alloc : kCFAllocatorDefault, v);
-            }
-        }
-    }
-    return orig_IORegistryEntryCreateCFProperty(entry, key, alloc, options);
-}
-
-// ---------------- UIDevice / IDFV ----------------
-static CFStringRef g_cf_uuid = NULL;
-
-static id (*orig_idfv)(id, SEL);
-static id my_idfv(id self, SEL _cmd) {
-    cfg_active();
-    if (g_active) {
-        if (!g_cf_uuid) g_cf_uuid = cf(g_uuid);
-        logline("[UIDevice] identifierForVendor -> spoofed");
-        return [[NSUUID alloc] initWithUUIDString:(__bridge NSString *)g_cf_uuid];
-    }
-    return orig_idfv(self, _cmd);
-}
-
-static id (*orig_idfa)(id, SEL);
-static id my_idfa(id self, SEL _cmd) {
-    cfg_active();
-    if (g_active) {
-        if (!g_cf_uuid) g_cf_uuid = cf(g_uuid);
-        logline("[ASIdentifierManager] advertisingIdentifier -> spoofed");
-        return [[NSUUID alloc] initWithUUIDString:(__bridge NSString *)g_cf_uuid];
-    }
-    return orig_idfa(self, _cmd);
 }
 
 static int (*orig_sysctlbyname)(const char *, void *, size_t *, void *, size_t);
@@ -331,6 +269,14 @@ static void mks_setup_ui(void) {
     mks_try_install(0);
 }
 
+static void mks_on_respring(CFNotificationCenterRef center, void *observer,
+                            CFStringRef name, const void *object, CFDictionaryRef info) {
+    logline("[*] respring notification -> exit SpringBoard");
+    kill(getpid(), SIGTERM);
+}
+
+#include <pthread.h>
+
 __attribute__((constructor))
 static void mks_init(void) {
     g_cf_product = cf("iPhone");
@@ -349,16 +295,5 @@ static void mks_init(void) {
     if (sc) MSHookFunction(sc, (void *)my_sysctlbyname, (void **)&orig_sysctlbyname);
 
     logline("[*] hooks MG1=%p MG2=%p sc=%p", mg1, mg2, sc);
-
-    void *iok = dlsym(RTLD_DEFAULT, "IORegistryEntryCreateCFProperty");
-    if (iok) MSHookFunction(iok, (void *)my_IORegistryEntryCreateCFProperty, (void **)&orig_IORegistryEntryCreateCFProperty);
-
-    Class uidev = objc_getClass("UIDevice");
-    if (uidev) MSHookMessageEx(uidev, sel_registerName("identifierForVendor"), (IMP)my_idfv, (IMP *)&orig_idfv);
-
-    Class asim = objc_getClass("ASIdentifierManager");
-    if (asim) MSHookMessageEx(asim, sel_registerName("advertisingIdentifier"), (IMP)my_idfa, (IMP *)&orig_idfa);
-
-    logline("[*] extra hooks: IOKit=%p UIDevice=%p ASIdentifierManager=%p", iok, uidev, asim);
     mks_setup_ui();
 }
