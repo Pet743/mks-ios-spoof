@@ -1,285 +1,50 @@
 # MKS 改机
 
-一个 iOS 越狱设备的**设备信息伪造（改机）**插件，由两部分组成：
-
-| 组件 | 说明 |
-|---|---|
-| `mks_1.5.deb` | Tweak（注入 SpringBoard / 设置 / 微信 / App Store 等进程），负责 hook 设备信息 API |
-| `MKS-spoofer.ipa` | 桌面 App，提供「一键改机 / 还原设备」界面 |
-
-改机参数**自动生成**，每次点击都会随机生成一套新的，并且强制满足格式校验规则，不需要手动编辑任何配置文件。
-
----
-
-## 架构（与 dpp 一致）
-
-```
-MKS 改机 App ──UDP 127.0.0.1:33236──> mksd (root daemon) ──killall──> SpringBoard
-     │                                                                   ▲
-     └──写入 /var/mobile/Media/mks.config──────────────────────────────> mks.dylib (注入各进程)
-```
-
-- App 只负责生成参数、写配置；
-- `mksd` 以 root 运行，负责 respring 这类需要权限的操作；
-- `mks.dylib` 注入 SpringBoard / App Store / 微信等进程，每次 hook 调用实时读配置。
-
-## 功能
-
-- **一键改机**：随机生成 14 段设备参数 → 写入配置 → 3 秒后自动 respring
-- **还原设备**：删除配置 → 立刻恢复真实设备信息
-- 无悬浮窗、无授权码、无网络请求（daemon 只监听本机回环）
-
-### 覆盖的字段
-
-| MobileGestalt key | 伪造内容 |
-|---|---|
-| `ProductType` | 机型标识，如 `iPhone16,2` |
-| `SerialNumber` | 序列号（10 位） |
-| `ModelNumber` | 型号，如 `MAS4CLL/A` |
-| `HardwareModel` | 主板型号，如 `D81AP` |
-| `ProductVersion` | iOS 版本，如 `16.3.6` |
-| `BuildVersion` | 版本号，如 `21Z45` |
-| `UniqueDeviceID` | UDID（40 位 hex） |
-| `InternationalMobileEquipmentIdentity` | IMEI（15 位，含 Luhn 校验） |
-| `InternationalMobileEquipmentIdentity2` | IMEI2（前 14 位） |
-| `EthernetMacAddress` / `BluetoothAddress` | MAC 地址 |
-| `ChipID` | 芯片段，如 `T8507` |
-
-以及 **IOKit** 层（很多风控读这里）：
-
-| IOKit 属性 | 伪造内容 |
-|---|---|
-| `IOPlatformSerialNumber` | 序列号 |
-| `IOPlatformUUID` | 由 UDID 派生的 UUID |
-
-以及 **UIDevice / IDFV / IDFA**：
-
-| API | 伪造内容 |
-|---|---|
-| `-[UIDevice identifierForVendor]` | 由 UDID 派生的 UUID |
-| `-[ASIdentifierManager advertisingIdentifier]` | 由 UDID 派生的 UUID |
-
-以及 sysctl 层：
-
-| key | 伪造内容 |
-|---|---|
-| `hw.machine` | `iPhone16,2` |
-| `hw.model` | `D81AP` |
-| `kern.osproductversion` | `16.3.6` |
-| `kern.osversion` | `21Z45` |
-
-### 参数校验规则
-
-生成器保证每组参数都满足以下规则（与常见"地区机型序列生成器"的校验一致）：
-
-- 序列号：10 位，字符集排除 `I` 和 `0`
-- IMEI：15 位数字，**通过 Luhn 校验**，且前 14 位与 IMEI2 一致
-- MAC：`xx:xx:xx:xx:xx:xx`（小写 hex）
-- ECID：16 位大写 hex
-- UDID：40 位小写 hex
-- 型号 `part`：`M` + 4 位 + `LL/A` 结尾
-- 主板 `board`：`D\d{2}AP`
-- 芯片 `chip`：`T[7-8]\d{3}`
-- 版本号 `build`：两位年 + 一位字母 + 两位数字（如 `21Z45`）
-- iOS 版本：`16.x.x`
-
-> ⚠️ 注意：这里的"通过校验"指**本地格式校验**。序列号和 IMEI 是随机生成的，苹果官方的保修/激活查询接口无法识别这些 SN 真实存在。如果目标应用只做格式与一致性校验，这套参数可以工作；若它联网核验 SN 真实性，随机值无法通过。
-
----
-
-## 安装
-
-### 环境要求
-
-- 已越狱的 iOS 设备（rootless，`/var/jb` 结构，如 Dopamine / palera1n rootless）
-- 注入框架：ellekit（`libellekit.dylib`，提供 `MSHookFunction`）
-- 若想用 App 图标形式安装：TrollStore / TrollStoreLite
-
-### 第一步：安装 Tweak
-
-任选一种：
-
-**方式 A：deb 安装（Sileo / Filza / dpkg）**
-
-```bash
-dpkg -i mks_1.5.deb
-# 或把 deb 传到手机，用 Sileo「安装本地 deb」
-```
-
-安装完成后会自动 respring。
-
-**方式 B：手动部署**
-
-```bash
-scp mks.dylib root@<设备IP>:/var/jb/Library/MobileSubstrate/DynamicLibraries/
-scp mks.plist root@<设备IP>:/var/jb/Library/MobileSubstrate/DynamicLibraries/
-ssh root@<设备IP> 'chmod 755 /var/jb/Library/MobileSubstrate/DynamicLibraries/mks.dylib; killall -9 SpringBoard'
-```
-
-### 第二步：安装 App（可选）
-
-App 只是操作界面，Tweak 本身已能工作。
-
-1. 把 `MKS-spoofer.ipa` 传到手机
-2. 打开 **TrollStoreLite** → 右上角 `+` → `Install from URL` 或 `Install IPA File`
-3. 选择 `MKS-spoofer.ipa` → `Install`
-4. 桌面出现 **MKS 改机** 图标
-
-> 为什么需要 TrollStore：自编译的 App 只有 ad-hoc 签名，iOS 的 amfid 会直接 SIGKILL。TrollStore 利用 CoreTrust 做永久签名，无需开发者证书，也不过期。
-
----
+自用 rootless iOS 工具，当前版本 **1.11**。提供一键改机、恢复原机、全局 Keychain 清理，以及同一 Wi-Fi 内的 HTTP 调用。无卡密、激活或远程授权。
 
 ## 使用
 
-1. 打开 **MKS 改机**
-2. 点 **一键改机（随机生成并通过认证）**
-   - 生成一组新参数并弹窗显示
-   - 状态变为「已改机」
-   - 立即生效，无需重启
-3. 点 **还原设备（关闭改机）**
-   - 删除配置，设备信息恢复真实值
-4. 重开 App 可看到当前状态与参数
+安装完整 `dist/mks_1.11.deb` 后，打开 MKS：
 
-### 自己验证是否生效
+- **一键改机**：生成并保存参数，然后自动重启桌面，手机短暂黑屏。
+- **恢复原机**：写入停用配置，然后自动重启桌面。
+- **清理全局 Keychain**：独立确认后备份并按参考插件规则清理，不重启桌面。
+- **右上角「接口文档」**：查看本机 Wi-Fi 地址、设备 UDID 路由、访问令牌与三个功能的 curl 示例，可一键复制。
 
-在越狱设备上执行：
+HTTP 默认端口 `33237`，路径前缀 `/v1/devices/{USB_UDID}`。改机不会修改 HTTP 服务单独保存的设备编号。Bearer token 用于授权，UDID 用于路由。操作返回任务编号，查询任务确认完成；带 Idempotency-Key 的重复请求不会重复改机或清理。
 
-```bash
-# sysctl 层（不会被注入的进程里读到真实值，属于正常）
-sysctl hw.model hw.machine
+## 文档
 
-# MobileGestalt 层（在任意被注入进程中读取才是伪造值）
-frida -U -n SpringBoard -e 'console.log(MGGetStringAnswer("ProductType"))'
+- [HTTP API、curl 与 Python 示例](docs/http-api.md)
+- [安装、设备编号配置与升级](docs/install.md)
+- [全局 Keychain 规则及 REA/Craft Anything 分析](docs/keychain-cleaner.md)
+- [验证结果与实际边界](docs/validation.md)
+- [DPP 底层对照分析](docs/dpp-analysis.md)
+- [项目交接总文档](HANDOVER.md)
+
+## 构建与验证
+
+macOS + Xcode iPhoneOS SDK，无需 Theos：
+
+```sh
+python3 tests/run_host_tests.py
+python3 tests/test_keychain.py
+python3 tests/test_daemon.py
+python3 tests/test_http.py
+python3 scripts/build.py
+python3 tests/verify_packages.py
 ```
 
-或直接在 App 内观察状态与参数。
+输出 `dist/mks_1.11.deb` 和 `dist/MKS-spoofer-1.11.ipa`，均为 arm64 + arm64e。完整 DEB 包含 App、tweak、daemon 和 HTTP 服务；独立 IPA 不安装 daemon。模拟器预览：`python3 scripts/build.py --simulator`。
 
----
+## 设备信息替换
 
-## 编译
+App、tweak 和 daemon 共用强类型配置解析器，兼容旧版 14 段配置；覆盖 MobileGestalt、IOKit Create/Search、sysctl、系统版本字典、IDFV 及允许跟踪时的 IDFA。内部 MG hook 保留原系统的类型输出，MGGetStringAnswer 按原函数所有权返回引用；原生缺失的敏感属性保留缺失状态。
 
-需要 macOS + Xcode（iPhoneOS SDK）。
+主配置 `/var/jb/var/lib/mks/mks.config` 使用原子写入和回读验证。停用记录具有优先权，避免旧配置重新启用。安装时在主配置不存在的情况下迁移旧 Media 配置。用户已反馈改机功能测试正常；本轮没有独立验收 Apple 账户登录成功。
 
-### Tweak
+Keychain 清理与用户提供的 App 清理插件使用相同的五条 SQL 和保护组规则，增加事务与一致快照备份；不同于恢复改机配置，已提交的 Keychain 删除不会因点击「恢复原机」而自动恢复。
 
-```bash
-cd tweak
-SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
-xcrun --sdk iphoneos clang -arch arm64 -arch arm64e \
-  -miphoneos-version-min=14.0 -dynamiclib -O2 \
-  -o mks.dylib mks.m \
-  -framework Foundation -framework CoreFoundation -framework UIKit \
-  -undefined dynamic_lookup -isysroot "$SDK"
-codesign -f -s - mks.dylib
-```
+## 1.11 设备与发布状态
 
-### App
-
-```bash
-cd app
-SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
-xcrun --sdk iphoneos clang -arch arm64 -arch arm64e \
-  -miphoneos-version-min=14.0 -fobjc-arc -O2 \
-  -o MKS main.m -framework UIKit -framework Foundation -isysroot "$SDK"
-```
-
-打包 IPA 目录结构：
-
-```
-Payload/MKS.app/MKS
-Payload/MKS.app/Info.plist
-```
-
-```bash
-zip -qr MKS-spoofer.ipa Payload
-```
-
----
-
-## 项目结构
-
-```
-.
-├── app/
-│   ├── main.m          # App 源码（UI + 参数生成 + 配置写入）
-│   └── Info.plist
-├── tweak/
-│   ├── mks.m           # Tweak 源码（MobileGestalt / sysctl hook）
-│   └── mks.plist       # 注入目标配置
-├── dist/
-│   ├── mks_1.5.deb     # 编译好的 Tweak
-│   └── MKS-spoofer.ipa # 编译好的 App
-└── docs/
-    └── install.md
-```
-
-## 配置位置
-
-Tweak 按以下顺序读取配置，找到第一个就用它：
-
-1. `/var/mobile/Media/mks.config`
-2. `/var/mobile/Library/Preferences/com.mks.spoof.config`
-3. `/var/mobile/Containers/Data/Application/*/Documents/mks.config`
-
-文件内容为 14 段 `----` 分隔的参数。文件不存在 = 不改机（返回真实值）。
-
-改机日志：`/var/mobile/mks.log`
-
-
----
-
-## 技术边界（重要，实测结论）
-
-改机能覆盖的是**软件层**，覆盖不到**硬件层**。实测验证如下：
-
-| 层 | 能否伪装 | 依据 |
-|---|---|---|
-| MobileGestalt（ProductType/SerialNumber/...） | ✅ | 实测返回伪值 |
-| IOKit（IOPlatformSerialNumber/IOPlatformUUID） | ✅ | 实测返回伪值 |
-| UIDevice-IDFV | ✅ | 实测返回伪值 |
-| sysctl（hw.machine/hw.model/osversion） | ✅ | 实测返回伪值 |
-| keychain 账号数据 | 可读写 | 实测（504 条，无 adi） |
-| **硬件设备身份（adi）** | ❌ | `adid` 的 entitlements 含 `FairPlayIOKitUserClient.access`，设备标识来自 **FairPlay 硬件**，软件无法伪造 |
-
-### 这意味着
-
-- **第三方 App**（微信、游戏、风控 SDK）读设备信息走 MG/IOKit/IDFV → 改机有效
-- **Apple 自家服务**（App Store / Apple ID）用硬件级 adi 识别设备 → **改机无效**
-- 因此「同一设备登录多个 Apple ID 被锁定」这类限制，改机无法绕过；这是 iOS 安全架构（Secure Enclave + FairPlay）的根基
-
-### 关于 dpp
-
-反编译 dpp 的 `dppd` 与 `dipp.dylib` 确认：其 daemon 里只有 `posix_spawn("killall -9 SpringBoard")`，dylib 内无 keychain / IOKit 硬件访问代码。它做到的是**和本项目同一层**（MobileGestalt 级伪装）。
-
-## 已知限制
-
-- 覆盖 MobileGestalt / sysctl / IOKit / UIDevice-IDFV / ASIdentifierManager-IDFA 五层
-- 未覆盖：`board-id`（IOKit 返回 Data 类型）、`IODeviceTree` 里的部分节点、网络侧指纹
-- 参数为随机生成，不具备苹果服务器的真实性
-- 需要越狱环境，非越狱设备无法使用
-
-## 免责声明
-
-仅供学习 iOS 逆向与 tweak 开发、以及在自有测试设备上研究使用。请勿用于绕过任何服务的风控、欺诈或其他违法用途。
-
----
-
-## 测试
-
-`tests/ui_smoke.py` 是端到端冒烟测试：通过 ZXTouch 模拟触摸、tidevice 启动 App、frida 读取 MobileGestalt，自动验证「改机 → 校验 → 还原」全链路。
-
-```bash
-pip install frida tidevice
-MKS_PW=<设备密码> MKS_UDID=<设备UDID> python3 tests/ui_smoke.py
-```
-
-覆盖内容：
-
-- 连续 3 轮改机，逐字段校验参数合规性（序列号字符集、IMEI Luhn、MAC/ECID/UDID 格式、`part` 后缀、`board`、`chip`、`build`、`iOS`）
-- 序列号唯一性（随机性检查）
-- 还原后配置文件必须被删除
-
-### 踩过的两个坑（写在这里免得再踩）
-
-1. **触摸坐标是像素不是点**：ZXTouch 的 `task 10` 传的是像素坐标（屏幕 1170×2532），不是逻辑点（390×844）。
-2. **两个弹窗高度不同**：「改机成功」弹窗内容多，`好` 按钮在 `y=1592`；「已还原」弹窗内容少，`好` 按钮在 `y=1416`。用同一个坐标会点空。
+已在 USB 连接的 iOS 16.3.1 rootless iPhone 安装 1.11，通过局域网实测改机、恢复接口及实际桌面重启，测试后恢复原参数。HTTP 清理执行在合成数据库验证，真实设备 Keychain 未在本轮删除。源码、安装产物及总文档随 1.11 同步；私人诊断、设备编号与访问令牌不纳入仓库。

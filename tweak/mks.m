@@ -1,379 +1,263 @@
-// mks tweak —— 读 App 写入的配置，动态决定是否伪造
-// 配置：/var/mobile/Media/mks.config 或 App 容器 Documents/mks.config
-// 文件内容为 14 段 "----" 分隔参数；文件不存在 = 还原真实设备
-#import <Foundation/Foundation.h>
-#include <IOKit/IOKitLib.h>
+// Typed, immutable profile snapshots shared by every MKS read path.
+#import "../common/MKSProfile.h"
+#include "../common/MKSBranch.h"
 #import <objc/runtime.h>
-
-extern void MSHookMessageEx(Class cls, SEL sel, IMP imp, IMP *result);
-#import <CoreFoundation/CoreFoundation.h>
-#include <sys/sysctl.h>
-#include <sys/stat.h>
+#import <objc/message.h>
 #include <dlfcn.h>
-#include <string.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <glob.h>
+#include <pthread.h>
+#include <sys/sysctl.h>
+#include <unistd.h>
+#include <mach-o/dyld.h>
+#if __has_feature(ptrauth_calls)
+#include <ptrauth.h>
+#endif
 
-extern void MSHookFunction(void *symbol, void *replace, void **result);
-
-static char g_ser[64], g_imei1[64], g_imei2[64], g_mac1[64], g_mac2[64];
-static char g_ecid[64], g_udid[128], g_model[64], g_part[64];
-static char g_board[64], g_chip[64], g_build[64], g_ios[64];
-static int g_active = 0;
-
-static CFStringRef g_cf_ser, g_cf_imei1, g_cf_imei2, g_cf_mac1, g_cf_mac2;
-static CFStringRef g_cf_ecid, g_cf_udid, g_cf_model, g_cf_part, g_cf_board;
-static CFStringRef g_cf_chip, g_cf_build, g_cf_ios, g_cf_product;
-
-static char g_cfg[2048];
-static time_t g_cfg_mtime = 0;
-
-static void logline(const char *fmt, ...) {
-    FILE *f = fopen("/var/mobile/mks.log", "a");
-    if (!f) return;
-    va_list ap; va_start(ap, fmt); vfprintf(f, fmt, ap); va_end(ap);
-    fputc('\n', f); fclose(f);
+typedef uint32_t io_registry_entry_t;
+typedef uint32_t IOOptionBits;
+static __thread unsigned int readingProfile;
+static MKSProfileStore *store;
+static NSDictionary *currentProfile(void) {
+    if (readingProfile) return nil;
+    readingProfile++;
+    @try { return [store snapshot]; }
+    @finally { readingProfile--; }
 }
-
-static CFStringRef cf(const char *s) { return CFStringCreateWithCString(kCFAllocatorDefault, s, kCFStringEncodingUTF8); }
-
-static void split_params(const char *line) {
-    char buf[2048];
-    strncpy(buf, line, sizeof(buf)-1); buf[sizeof(buf)-1]=0;
-    char *fields[16]={0}; int n=0; char *save=NULL;
-    for (char *p = strtok_r(buf, "----", &save); p && n<16; p = strtok_r(NULL, "----", &save)) fields[n++]=p;
-    if (n < 14) { g_active = 0; return; }
-    strncpy(g_ser, fields[0], 63);  strncpy(g_imei1, fields[1], 63);
-    strncpy(g_imei2, fields[2], 63); strncpy(g_mac1, fields[3], 63);
-    strncpy(g_mac2, fields[4], 63);  strncpy(g_ecid, fields[5], 63);
-    strncpy(g_udid, fields[6], 127); strncpy(g_model, fields[8], 63);
-    strncpy(g_part, fields[9], 63);  strncpy(g_board, fields[10], 63);
-    strncpy(g_chip, fields[11], 63); strncpy(g_build, fields[12], 63);
-    strncpy(g_ios, fields[13], 63);
-    g_active = 1;
-    if (g_cf_ser) { /* 重建 CF 对象 */ }
-    g_cf_ser = cf(g_ser); g_cf_imei1 = cf(g_imei1); g_cf_imei2 = cf(g_imei2);
-    g_cf_mac1 = cf(g_mac1); g_cf_mac2 = cf(g_mac2); g_cf_ecid = cf(g_ecid);
-    g_cf_udid = cf(g_udid); g_cf_model = cf(g_model); g_cf_part = cf(g_part);
-    g_cf_board = cf(g_board); g_cf_chip = cf(g_chip); g_cf_build = cf(g_build);
-    g_cf_ios = cf(g_ios);
-}
-
-static int read_cfg_path(const char *path) {
-    struct stat st;
-    if (stat(path, &st) != 0) return 0;
-    if (st.st_mtime == g_cfg_mtime && g_active) return 1;
-    FILE *f = fopen(path, "r");
-    if (!f) return 0;
-    size_t n = fread(g_cfg, 1, sizeof(g_cfg)-1, f);
-    fclose(f);
-    g_cfg[n] = 0;
-    while (n > 0 && (g_cfg[n-1]=='\n' || g_cfg[n-1]=='\r' || g_cfg[n-1]==' ')) g_cfg[--n] = 0;
-    g_cfg_mtime = st.st_mtime;
-    split_params(g_cfg);
-    return g_active;
-}
-
-// 检查 respring 标志文件（只有 SpringBoard 响应）
-static void check_respring(void) {
-    struct stat st;
-    if (stat("/var/mobile/Media/mks.respring", &st) != 0) return;
-    const char *pn = getprogname();
-    if (!pn || strcmp(pn, "SpringBoard") != 0) return;
-    unlink("/var/mobile/Media/mks.respring");
-    logline("[*] respring flag detected -> exiting SpringBoard");
-    kill(getpid(), SIGTERM);
-}
-
-// 返回 1 表示启用伪造
-static int cfg_active(void) {
-    check_respring();
-    if (read_cfg_path("/var/mobile/Media/mks.config")) return 1;
-    if (read_cfg_path("/var/mobile/Library/Preferences/com.mks.spoof.config")) return 1;
-    glob_t g;
-    if (glob("/var/mobile/Containers/Data/Application/*/Documents/mks.config", 0, NULL, &g) == 0) {
-        int ok = 0;
-        for (size_t i = 0; i < g.gl_pathc; i++) {
-            if (read_cfg_path(g.gl_pathv[i])) { ok = 1; break; }
-        }
-        globfree(&g);
-        if (!ok) g_active = 0;
-        return ok;
-    }
-    g_active = 0;
-    return 0;
-}
-
-static CFStringRef answer_for_key(CFStringRef key) {
-    if (!key || !g_active) return NULL;
-    char kb[128] = {0};
-    if (!CFStringGetCString(key, kb, sizeof(kb), kCFStringEncodingUTF8)) return NULL;
-    struct { const char *k; CFStringRef v; } map[] = {
-        {"ProductType", g_cf_model},
-        {"HardwareModel", g_cf_board},
-        {"ModelNumber", g_cf_part},
-        {"SerialNumber", g_cf_ser},
-        {"UniqueDeviceID", g_cf_udid},
-        {"InternationalMobileEquipmentIdentity", g_cf_imei1},
-        {"InternationalMobileEquipmentIdentity2", g_cf_imei2},
-        {"EthernetMacAddress", g_cf_mac1},
-        {"BluetoothAddress", g_cf_mac2},
-        {"ProductVersion", g_cf_ios},
-        {"BuildVersion", g_cf_build},
-        {"ChipID", g_cf_chip},
-        {"ProductName", g_cf_product},
-        {"RegulatoryModelNumber", g_cf_part},
-    };
-    for (size_t i = 0; i < sizeof(map)/sizeof(map[0]); i++) {
-        if (!strcmp(kb, map[i].k) && map[i].v) {
-            logline("[MG] %s -> spoofed", kb);
-            return map[i].v;
-        }
-    }
-    return NULL;
-}
-
+// Despite its Get name, the native MGGetStringAnswer forwards an owned result
+// from the internal Copy implementation. JetEngine consumes that reference.
+// Give every caller its own +1 so releasing it cannot invalidate profile values.
 static CFStringRef (*orig_MGGetStringAnswer)(CFStringRef);
 static CFStringRef my_MGGetStringAnswer(CFStringRef key) {
-    cfg_active();
-    CFStringRef r = answer_for_key(key);
-    return r ? r : orig_MGGetStringAnswer(key);
+    @autoreleasepool {
+        id value=key?MKSMGValue(currentProfile(),(__bridge NSString *)key):nil;
+        if ([value isKindOfClass:NSString.class]) return (CFStringRef)CFBridgingRetain(value);
+        return orig_MGGetStringAnswer?orig_MGGetStringAnswer(key):NULL;
+    }
 }
-
 static CFTypeRef (*orig_MGCopyAnswer)(CFStringRef);
+static CFTypeRef (*orig_MGCopyAnswerInternal)(CFStringRef,uint32_t *);
+static CFTypeRef patchBlob(NSDictionary *profile,CFTypeRef original) {
+    if(!original || CFGetTypeID(original)!=CFDictionaryGetTypeID() || ![profile[@"enabled"] boolValue]) return original;
+    NSDictionary *keys=@{@"InternationalMobileEquipmentIdentity":@"InternationalMobileEquipmentIdentity",
+        @"MobileEquipmentIdentifier":@"MobileEquipmentIdentifier",@"kCTPostponementInfoUniqueID":@"MobileEquipmentIdentifier"};
+    NSMutableDictionary *result=[(__bridge NSDictionary *)original mutableCopy];
+    for(NSString *key in keys) {
+        id value=MKSMGValue(profile,keys[key]);
+        if(result[key] && value) result[key]=value;
+    }
+    CFRelease(original);
+    return CFBridgingRetain(result);
+}
 static CFTypeRef my_MGCopyAnswer(CFStringRef key) {
-    cfg_active();
-    CFStringRef r = answer_for_key(key);
-    return r ? (CFTypeRef)CFRetain(r) : orig_MGCopyAnswer(key);
-}
-
-// ---------------- IOKit ----------------
-static char g_uuid[64];
-
-static void build_uuid(void) {
-    // 从 UDID（40 hex）取 32 位拼成 8-4-4-4-12 的 UUID
-    const char *u = g_udid;
-    char hex[33] = {0};
-    size_t n = 0;
-    for (size_t i = 0; u[i] && n < 32; i++) {
-        char c = u[i];
-        if (isxdigit((unsigned char)c)) hex[n++] = (char)toupper((unsigned char)c);
+    @autoreleasepool {
+        NSDictionary *p=currentProfile();
+        id value=key?MKSMGValue(p,(__bridge NSString *)key):nil;
+        if(value) return CFBridgingRetain(value);
+        CFTypeRef original=orig_MGCopyAnswer?orig_MGCopyAnswer(key):NULL;
+        return key && CFEqual(key,CFSTR("BasebandPostponementStatusBlob"))?patchBlob(p,original):original;
     }
-    while (n < 32) hex[n++] = '0';
-    snprintf(g_uuid, sizeof(g_uuid), "%.8s-%.4s-%.4s-%.4s-%.12s",
-             hex, hex + 8, hex + 12, hex + 16, hex + 20);
 }
-
-static CFTypeRef (*orig_IORegistryEntryCreateCFProperty)(io_registry_entry_t, CFStringRef, CFAllocatorRef, IOOptionBits);
-static CFTypeRef my_IORegistryEntryCreateCFProperty(io_registry_entry_t entry, CFStringRef key,
-                                                    CFAllocatorRef alloc, IOOptionBits options) {
-    cfg_active();
-    if (g_active && key) {
-        char kb[128] = {0};
-        if (CFStringGetCString(key, kb, sizeof(kb), kCFStringEncodingUTF8)) {
-            CFStringRef v = NULL;
-            if (!strcmp(kb, "IOPlatformSerialNumber")) v = g_cf_ser;
-            else if (!strcmp(kb, "IOPlatformUUID")) {
-                static CFStringRef uuid_cf;
-                if (!uuid_cf) uuid_cf = cf(g_uuid);
-                v = uuid_cf;
-            }
-            if (v) {
-                logline("[IOKit] %s -> spoofed", kb);
-                return CFStringCreateCopy(alloc ? alloc : kCFAllocatorDefault, v);
-            }
+static CFTypeRef my_MGCopyAnswerInternal(CFStringRef key,uint32_t *answerType) {
+    @autoreleasepool {
+        // This is a 32-bit MobileGestalt type output, not opaque context or
+        // CFTypeID. Typed getters assert on it. Let the original populate it,
+        // retaining its exact enum and unknown-key behavior on each OS build.
+        CFTypeRef original=orig_MGCopyAnswerInternal?orig_MGCopyAnswerInternal(key,answerType):NULL;
+        NSDictionary *p=currentProfile();
+        id value=key?MKSMGValue(p,(__bridge NSString *)key):nil;
+        if(value && original && CFGetTypeID(original)==CFGetTypeID((__bridge CFTypeRef)value)) {
+            CFRelease(original);
+            return CFBridgingRetain(value);
         }
-    }
-    return orig_IORegistryEntryCreateCFProperty(entry, key, alloc, options);
-}
-
-// ---------------- UIDevice / IDFV ----------------
-static CFStringRef g_cf_uuid = NULL;
-
-static id (*orig_idfv)(id, SEL);
-static id my_idfv(id self, SEL _cmd) {
-    cfg_active();
-    if (g_active) {
-        if (!g_cf_uuid) g_cf_uuid = cf(g_uuid);
-        logline("[UIDevice] identifierForVendor -> spoofed");
-        return [[NSUUID alloc] initWithUUIDString:(__bridge NSString *)g_cf_uuid];
-    }
-    return orig_idfv(self, _cmd);
-}
-
-static id (*orig_idfa)(id, SEL);
-static id my_idfa(id self, SEL _cmd) {
-    cfg_active();
-    if (g_active) {
-        if (!g_cf_uuid) g_cf_uuid = cf(g_uuid);
-        logline("[ASIdentifierManager] advertisingIdentifier -> spoofed");
-        return [[NSUUID alloc] initWithUUIDString:(__bridge NSString *)g_cf_uuid];
-    }
-    return orig_idfa(self, _cmd);
-}
-
-static int (*orig_sysctlbyname)(const char *, void *, size_t *, void *, size_t);
-static int my_sysctlbyname(const char *name, void *oldp, size_t *oldlenp, void *newp, size_t newlen) {
-    cfg_active();
-    const char *val = NULL;
-    if (g_active && name) {
-        if (!strcmp(name, "hw.machine")) val = g_model;
-        else if (!strcmp(name, "hw.model")) val = g_board;
-        else if (!strcmp(name, "kern.osproductversion")) val = g_ios;
-        else if (!strcmp(name, "kern.osversion")) val = g_build;
-    }
-    if (val && oldp && oldlenp) {
-        size_t len = strlen(val) + 1;
-        size_t n = (*oldlenp < len) ? *oldlenp : len;
-        memcpy(oldp, val, n);
-        *oldlenp = len;
-        return 0;
-    }
-    return orig_sysctlbyname(name, oldp, oldlenp, newp, newlen);
-}
-
-
-// ===================== SpringBoard 悬浮 UI =====================
-#import <UIKit/UIKit.h>
-
-@interface MKSHandler : NSObject
-@end
-
-@implementation MKSHandler
-- (void)tap {
-    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"MKS 改机"
-        message:@"选择操作" preferredStyle:UIAlertControllerStyleAlert];
-    [ac addAction:[UIAlertAction actionWithTitle:@"一键改机" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
-        NSString *line = [MKSHandler genLine];
-        [line writeToFile:@"/var/mobile/Media/mks.config" atomically:YES encoding:NSUTF8StringEncoding error:nil];
-        [line writeToFile:@"/var/mobile/Library/Preferences/com.mks.spoof.config" atomically:YES encoding:NSUTF8StringEncoding error:nil];
-        UIAlertController *ok = [UIAlertController alertControllerWithTitle:@"改机成功" message:line preferredStyle:UIAlertControllerStyleAlert];
-        [ok addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
-        [[MKSHandler topVC] presentViewController:ok animated:YES completion:nil];
-    }]];
-    [ac addAction:[UIAlertAction actionWithTitle:@"还原设备" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a) {
-        [[NSFileManager defaultManager] removeItemAtPath:@"/var/mobile/Media/mks.config" error:nil];
-        [[NSFileManager defaultManager] removeItemAtPath:@"/var/mobile/Library/Preferences/com.mks.spoof.config" error:nil];
-        UIAlertController *ok = [UIAlertController alertControllerWithTitle:@"已还原" message:@"设备信息恢复真实值" preferredStyle:UIAlertControllerStyleAlert];
-        [ok addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
-        [[MKSHandler topVC] presentViewController:ok animated:YES completion:nil];
-    }]];
-    [ac addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
-    [[MKSHandler topVC] presentViewController:ac animated:YES completion:nil];
-}
-+ (UIViewController *)topVC {
-    UIWindow *w = [UIApplication sharedApplication].keyWindow;
-    if (!w) { for (UIWindow *x in [UIApplication sharedApplication].windows) { if (x.isKeyWindow) { w = x; break; } } }
-    UIViewController *vc = w.rootViewController;
-    while (vc.presentedViewController) vc = vc.presentedViewController;
-    return vc;
-}
-+ (NSString *)genLine {
-    const char *U = "ABCDEFGHJKLMNPQRSTUVWXYZ";
-    NSMutableString *ser = [NSMutableString string];
-    for (int i = 0; i < 10; i++) [ser appendFormat:@"%c", U[arc4random_uniform(24)]];
-    NSMutableString *imei = [NSMutableString string];
-    for (int i = 0; i < 14; i++) [imei appendFormat:@"%d", arc4random_uniform(10)];
-    for (int c = 0; c < 10; c++) {
-        NSString *full = [imei stringByAppendingFormat:@"%d", c];
-        int sum = 0; BOOL dbl = NO;
-        for (NSInteger i = full.length - 1; i >= 0; i--) {
-            int d = [full characterAtIndex:i] - '0';
-            if (dbl) { d *= 2; if (d > 9) d -= 9; }
-            sum += d; dbl = !dbl;
-        }
-        if (sum % 10 == 0) { imei = [full mutableCopy]; break; }
-    }
-    NSMutableArray *macs = [NSMutableArray array];
-    for (int k = 0; k < 2; k++) {
-        NSMutableArray *p = [NSMutableArray array];
-        for (int i = 0; i < 6; i++) [p addObject:[NSString stringWithFormat:@"%02x", arc4random_uniform(256)]];
-        [macs addObject:[p componentsJoinedByString:@":"]];
-    }
-    NSMutableString *ecid = [NSMutableString string];
-    for (int i = 0; i < 16; i++) [ecid appendFormat:@"%X", arc4random_uniform(16)];
-    NSMutableString *udid = [NSMutableString string];
-    for (int i = 0; i < 40; i++) [udid appendFormat:@"%x", arc4random_uniform(16)];
-    NSString *part = [NSString stringWithFormat:@"M%C%C%C%CLL/A", U[arc4random_uniform(24)], U[arc4random_uniform(24)], (char)('0'+arc4random_uniform(10)), U[arc4random_uniform(24)]];
-    NSString *chip = [NSString stringWithFormat:@"T%d%03d", 7 + arc4random_uniform(2), arc4random_uniform(1000)];
-    NSString *build = [NSString stringWithFormat:@"%02d%C%02d", 20 + arc4random_uniform(3), U[arc4random_uniform(24)], 10 + arc4random_uniform(90)];
-    NSString *ios = [NSString stringWithFormat:@"16.%d.%d", arc4random_uniform(8), arc4random_uniform(10)];
-    return [@[ser, imei, [imei substringToIndex:14], macs[0], macs[1], ecid, udid, ser, @"iPhone16,2", part, @"D81AP", chip, build, ios] componentsJoinedByString:@"----"];
-}
-@end
-
-static void mks_try_install(int attempt);
-
-static void mks_install_now(void) {
-    {
-        static MKSHandler *h;
-        h = [MKSHandler new];
-        UIWindow *win = [UIApplication sharedApplication].keyWindow;
-        if (!win) { mks_try_install(0); return; }
-        UIButton *b = [UIButton buttonWithType:UIButtonTypeSystem];
-        b.frame = CGRectMake(-200, -200, 58, 58);  // 移出屏幕，不显示
-        b.backgroundColor = [UIColor colorWithRed:0.1 green:0.5 blue:1.0 alpha:0.85];
-        b.layer.cornerRadius = 29;
-        b.layer.zPosition = 10000;
-        [b setTitle:@"MKS" forState:UIControlStateNormal];
-        [b setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-        b.titleLabel.font = [UIFont boldSystemFontOfSize:15];
-        [b addTarget:h action:@selector(tap) forControlEvents:UIControlEventTouchUpInside];
-        [win addSubview:b];
-        logline("[*] floating button installed on window %p", win);
+        return key && CFEqual(key,CFSTR("BasebandPostponementStatusBlob"))?patchBlob(p,original):original;
     }
 }
+static CFTypeRef (*orig_IORegistryEntryCreateCFProperty)(io_registry_entry_t,CFStringRef,CFAllocatorRef,IOOptionBits);
+static CFTypeRef my_IORegistryEntryCreateCFProperty(io_registry_entry_t entry,CFStringRef key,CFAllocatorRef alloc,IOOptionBits options) {
+    CFTypeRef original=orig_IORegistryEntryCreateCFProperty?orig_IORegistryEntryCreateCFProperty(entry,key,alloc,options):NULL;
+    @autoreleasepool {
+        id value=key?MKSRegistryValue(currentProfile(),(__bridge NSString *)key,(__bridge id)original):nil;
+        if (!value) return original;
+        CFTypeRef result=CFBridgingRetain(value);
+        if(original) CFRelease(original);
+        return result;
+    }
+}
+static CFTypeRef (*orig_IORegistryEntrySearchCFProperty)(io_registry_entry_t,const char *,CFStringRef,CFAllocatorRef,IOOptionBits);
+static CFTypeRef my_IORegistryEntrySearchCFProperty(io_registry_entry_t entry,const char *plane,CFStringRef key,CFAllocatorRef alloc,IOOptionBits options) {
+    CFTypeRef original=orig_IORegistryEntrySearchCFProperty?orig_IORegistryEntrySearchCFProperty(entry,plane,key,alloc,options):NULL;
+    @autoreleasepool {
+        id value=key?MKSRegistryValue(currentProfile(),(__bridge NSString *)key,(__bridge id)original):nil;
+        if (!value) return original;
+        CFTypeRef result=CFBridgingRetain(value);
+        if(original) CFRelease(original);
+        return result;
+    }
+}
+static CFDictionaryRef (*orig_CFCopySystemVersionDictionary)(void);
+static CFDictionaryRef my_CFCopySystemVersionDictionary(void) {
+    CFDictionaryRef original=orig_CFCopySystemVersionDictionary?orig_CFCopySystemVersionDictionary():NULL;
+    if(!original) return NULL;
+    @autoreleasepool {
+        NSDictionary *p=currentProfile();
+        NSString *version=MKSMGValue(p,@"ProductVersion"), *build=MKSMGValue(p,@"BuildVersion");
+        if (!version && !build) return original;
+        NSMutableDictionary *result=[(__bridge NSDictionary *)original mutableCopy];
+        if(version) { result[@"ProductVersion"]=version; result[@"ShortVersionString"]=version; }
+        if(build) result[@"ProductBuildVersion"]=build;
+        if(version && build) result[@"FullVersionString"]=[NSString stringWithFormat:@"Version %@ (Build %@)",version,build];
+        CFRelease(original);
+        return CFBridgingRetain(result);
+    }
+}
+static id (*orig_idfv)(id,SEL);
+static id my_idfv(id self,SEL cmd) {
+    NSString *uuid=MKSProfileUUID(currentProfile());
+    return uuid?[[NSUUID alloc] initWithUUIDString:uuid]:(orig_idfv?orig_idfv(self,cmd):nil);
+}
+static id (*orig_idfa)(id,SEL);
+static id my_idfa(id self,SEL cmd) {
+    id original=orig_idfa?orig_idfa(self,cmd):nil;
+    // Keep the all-zero identifier returned when advertising tracking is denied.
+    if ([original isKindOfClass:NSUUID.class] && [[original UUIDString] isEqual:@"00000000-0000-0000-0000-000000000000"]) return original;
+    NSString *uuid=MKSProfileUUID(currentProfile());
+    return uuid?[[NSUUID alloc] initWithUUIDString:uuid]:original;
+}
+static BOOL objectSetter(id obj,SEL selector,NSString *value) {
+    Method method=class_getInstanceMethod(object_getClass(obj),selector);
+    char result[8]={0},argument[8]={0};
+    if(!method || method_getNumberOfArguments(method)!=3) return NO;
+    method_getReturnType(method,result,sizeof(result));method_getArgumentType(method,2,argument,sizeof(argument));
+    if(result[0]!='v' || argument[0]!='@') return NO;
+    ((void (*)(id,SEL,id))objc_msgSend)(obj,selector,value);
+    return YES;
+}
+static id (*orig_equipment)(id,SEL);
+static id my_equipment(id self,SEL cmd) {
+    id original=orig_equipment?orig_equipment(self,cmd):nil;
+    NSDictionary *p=currentProfile();
+    if(![original isKindOfClass:NSDictionary.class] || ![p[@"enabled"] boolValue]) return original;
+    NSString *imei=MKSMGValue(p,@"InternationalMobileEquipmentIdentity"),*meid=MKSMGValue(p,@"MobileEquipmentIdentifier");
+    if(!imei && !meid) return original;
+    for(id key in original) {
+        id item=original[key];
+        if(![item conformsToProtocol:@protocol(NSCopying)]) continue;
+        id copy=[item copy];
+        if(copy==item) continue; // A cached original must remain unchanged for disable/restore.
+        BOOL changed=NO;
+        if(imei) changed|=objectSetter(copy,sel_registerName("setIMEI:"),imei);
+        if(meid) changed|=objectSetter(copy,sel_registerName("setMEID:"),meid);
+        if(changed) { NSMutableDictionary *result=[original mutableCopy];result[key]=copy;return result; }
+    }
+    return original;
+}
+static id (*orig_deviceBuild)(id,SEL);
+static id my_deviceBuild(id self,SEL cmd) {
+    return MKSMGValue(currentProfile(),@"BuildVersion") ?: (orig_deviceBuild?orig_deviceBuild(self,cmd):nil);
+}
+static NSString *sysctlValue(NSDictionary *profile,const char *name) {
+    if(!name) return nil;
+    if(!strcmp(name,"hw.machine")) return MKSMGValue(profile,@"ProductType");
+    if(!strcmp(name,"hw.model")) return MKSMGValue(profile,@"HWModelStr");
+    if(!strcmp(name,"kern.osproductversion")) return MKSMGValue(profile,@"ProductVersion");
+    if(!strcmp(name,"kern.osversion")) return MKSMGValue(profile,@"BuildVersion");
+    return nil;
+}
+static int (*orig_sysctlbyname)(const char *,void *,size_t *,void *,size_t);
+static int my_sysctlbyname(const char *name,void *out,size_t *len,void *newp,size_t newlen) {
+    if(!newp && !newlen) {
+        NSString *value=sysctlValue(currentProfile(),name);
+        if(value) return MKSStringSysctl(value,out,len);
+    }
+    return orig_sysctlbyname?orig_sysctlbyname(name,out,len,newp,newlen):-1;
+}
+static int (*orig_sysctl)(int *,u_int,void *,size_t *,void *,size_t);
+static int my_sysctl(int *name,u_int count,void *out,size_t *len,void *newp,size_t newlen) {
+    if(name && count==2 && !newp && !newlen) {
+        const char *key=NULL;
+        if(name[0]==CTL_HW && name[1]==HW_MACHINE) key="hw.machine";
+        if(name[0]==CTL_HW && name[1]==HW_MODEL) key="hw.model";
+        if(name[0]==CTL_KERN && name[1]==KERN_OSVERSION) key="kern.osversion";
+        NSString *value=sysctlValue(currentProfile(),key);
+        if(value) return MKSStringSysctl(value,out,len);
+    }
+    return orig_sysctl?orig_sysctl(name,count,out,len,newp,newlen):-1;
+}
 
-static void mks_try_install(int attempt) {
-    if (attempt > 40) { logline("[!] no keyWindow after 40s"); return; }
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        UIWindow *win = [UIApplication sharedApplication].keyWindow;
-        if (win) { mks_install_now(); }
-        else { mks_try_install(attempt + 1); }
+#ifndef MKS_UNIT_TEST
+typedef void (*HookFunction)(void *,void *,void **);
+typedef void (*HookMessage)(Class,SEL,IMP,IMP *);
+static void hook(HookFunction install,const char *name,void *replacement,void **original) {
+    void *target=dlsym(RTLD_DEFAULT,name);
+    if(target && install) install(target,replacement,original);
+}
+static void hookMG(HookFunction install) {
+    void *symbol=dlsym(RTLD_DEFAULT,"MGCopyAnswer");
+    if(!symbol) return;
+    void *code=symbol;
+#if __has_feature(ptrauth_calls)
+    code=ptrauth_strip(code,ptrauth_key_function_pointer);
+#endif
+    uintptr_t target=MKSBranchTarget(code,8,(uintptr_t)code);
+    Dl_info from={0},to={0};
+    if(target && !(target&3) && dladdr(code,&from) && dladdr((void *)target,&to) && from.dli_fbase==to.dli_fbase) {
+        install((void *)target,(void *)my_MGCopyAnswerInternal,(void **)&orig_MGCopyAnswerInternal);
+    } else {
+        install(symbol,(void *)my_MGCopyAnswer,(void **)&orig_MGCopyAnswer);
+    }
+}
+static BOOL hookObjectGetter(HookMessage install,const char *className,const char *selectorName,IMP replacement,IMP *original) {
+    Class cls=objc_getClass(className);SEL selector=sel_registerName(selectorName);
+    Method method=class_getInstanceMethod(cls,selector);char type[8]={0};
+    if(!install || !method || method_getNumberOfArguments(method)!=2) return NO;
+    method_getReturnType(method,type,sizeof(type));
+    if(type[0]!='@') return NO;
+    install(cls,selector,replacement,original);return YES;
+}
+static void installPrivateGetters(HookMessage message) {
+    // Private frameworks can arrive after the injection constructor.
+    static BOOL equipmentInstalled,buildInstalled;
+    if(!equipmentInstalled) equipmentInstalled=hookObjectGetter(message,"PSUICoreTelephonySubscriberCache","mobileEquipmentInfoDict",(IMP)my_equipment,(IMP *)&orig_equipment);
+    if(!buildInstalled) buildInstalled=hookObjectGetter(message,"AADeviceInfo","buildVersion",(IMP)my_deviceBuild,(IMP *)&orig_deviceBuild);
+}
+static HookMessage privateMessageInstaller;
+static volatile int getterInstallPending;
+static void onImageLoaded(const struct mach_header *header,intptr_t slide) {
+    (void)header;(void)slide;
+    if(!__sync_bool_compare_and_swap(&getterInstallPending,0,1)) return;
+    dispatch_async(dispatch_get_main_queue(),^{
+        __sync_lock_release(&getterInstallPending);
+        installPrivateGetters(privateMessageInstaller);
     });
 }
-
-static void mks_setup_ui(void) {
-    mks_try_install(0);
+__attribute__((constructor)) static void mks_init(void) {
+    @autoreleasepool {
+        store=[[MKSProfileStore alloc] initWithPaths:MKSConfigPaths()];
+        void *framework=dlopen("/var/jb/usr/lib/libellekit.dylib",RTLD_NOW|RTLD_GLOBAL);
+        if(!framework) framework=dlopen("/var/jb/usr/lib/libsubstrate.dylib",RTLD_NOW|RTLD_GLOBAL);
+        HookFunction install=(HookFunction)dlsym(RTLD_DEFAULT,"MSHookFunction");
+        HookMessage message=(HookMessage)dlsym(RTLD_DEFAULT,"MSHookMessageEx");
+        if(!install) { NSLog(@"MKS: hook framework unavailable; no hooks installed"); return; }
+        dlopen("/usr/lib/libMobileGestalt.dylib",RTLD_LAZY|RTLD_GLOBAL);
+        dlopen("/System/Library/Frameworks/IOKit.framework/IOKit",RTLD_LAZY|RTLD_GLOBAL);
+        hook(install,"MGGetStringAnswer",(void *)my_MGGetStringAnswer,(void **)&orig_MGGetStringAnswer);
+        hookMG(install);
+        hook(install,"IORegistryEntryCreateCFProperty",(void *)my_IORegistryEntryCreateCFProperty,(void **)&orig_IORegistryEntryCreateCFProperty);
+        hook(install,"IORegistryEntrySearchCFProperty",(void *)my_IORegistryEntrySearchCFProperty,(void **)&orig_IORegistryEntrySearchCFProperty);
+        hook(install,"_CFCopySystemVersionDictionary",(void *)my_CFCopySystemVersionDictionary,(void **)&orig_CFCopySystemVersionDictionary);
+        hook(install,"sysctlbyname",(void *)my_sysctlbyname,(void **)&orig_sysctlbyname);
+        hook(install,"sysctl",(void *)my_sysctl,(void **)&orig_sysctl);
+        Class device=objc_getClass("UIDevice");
+        SEL idfv=sel_registerName("identifierForVendor");
+        if(message && class_getInstanceMethod(device,idfv)) message(device,idfv,(IMP)my_idfv,(IMP *)&orig_idfv);
+        dlopen("/System/Library/Frameworks/AdSupport.framework/AdSupport",RTLD_LAZY|RTLD_GLOBAL);
+        Class ads=objc_getClass("ASIdentifierManager");
+        SEL advertising=sel_registerName("advertisingIdentifier");
+        if(message && class_getInstanceMethod(ads,advertising)) message(ads,advertising,(IMP)my_idfa,(IMP *)&orig_idfa);
+        installPrivateGetters(message);
+        privateMessageInstaller=message;
+        _dyld_register_func_for_add_image(onImageLoaded);
+        NSLog(@"MKS 1.9: MG=%d/%d IO=%d/%d sysctl=%d/%d",orig_MGCopyAnswer!=NULL || orig_MGCopyAnswerInternal!=NULL,orig_MGGetStringAnswer!=NULL,
+            orig_IORegistryEntryCreateCFProperty!=NULL,orig_IORegistryEntrySearchCFProperty!=NULL,orig_sysctl!=NULL,orig_sysctlbyname!=NULL);
+    }
 }
-
-static void mks_on_respring(CFNotificationCenterRef center, void *observer,
-                            CFStringRef name, const void *object, CFDictionaryRef info) {
-    logline("[*] respring notification -> exit SpringBoard");
-    kill(getpid(), SIGTERM);
-}
-
-#include <pthread.h>
-
-__attribute__((constructor))
-static void mks_init(void) {
-    g_cf_product = cf("iPhone");
-    cfg_active();
-    logline("=== mks loaded pid=%d active=%d ===", getpid(), g_active);
-
-    void *mg1 = dlsym(RTLD_DEFAULT, "MGGetStringAnswer");
-    if (!mg1) { void *h = dlopen("/usr/lib/libMobileGestalt.dylib", RTLD_LAZY); if (h) mg1 = dlsym(h, "MGGetStringAnswer"); }
-    if (mg1) MSHookFunction(mg1, (void *)my_MGGetStringAnswer, (void **)&orig_MGGetStringAnswer);
-
-    void *mg2 = dlsym(RTLD_DEFAULT, "MGCopyAnswer");
-    if (!mg2) { void *h = dlopen("/usr/lib/libMobileGestalt.dylib", RTLD_LAZY); if (h) mg2 = dlsym(h, "MGCopyAnswer"); }
-    if (mg2) MSHookFunction(mg2, (void *)my_MGCopyAnswer, (void **)&orig_MGCopyAnswer);
-
-    void *sc = dlsym(RTLD_DEFAULT, "sysctlbyname");
-    if (sc) MSHookFunction(sc, (void *)my_sysctlbyname, (void **)&orig_sysctlbyname);
-
-    logline("[*] hooks MG1=%p MG2=%p sc=%p", mg1, mg2, sc);
-    void *iok = dlsym(RTLD_DEFAULT, "IORegistryEntryCreateCFProperty");
-    if (!iok) { void *h = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_LAZY); if (h) iok = dlsym(h, "IORegistryEntryCreateCFProperty"); }
-    if (iok) MSHookFunction(iok, (void *)my_IORegistryEntryCreateCFProperty, (void **)&orig_IORegistryEntryCreateCFProperty);
-
-    Class uidev = objc_getClass("UIDevice");
-    if (uidev) MSHookMessageEx(uidev, sel_registerName("identifierForVendor"), (IMP)my_idfv, (IMP *)&orig_idfv);
-
-    Class asim = objc_getClass("ASIdentifierManager");
-    if (asim) MSHookMessageEx(asim, sel_registerName("advertisingIdentifier"), (IMP)my_idfa, (IMP *)&orig_idfa);
-
-    logline("[*] extra hooks IOKit=%p UIDevice=%p ASIM=%p", iok, uidev, asim);
-    mks_setup_ui();
-}
+#endif

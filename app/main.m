@@ -1,68 +1,10 @@
 #import <UIKit/UIKit.h>
-#include <spawn.h>
-#include <dlfcn.h>
+#import "../common/MKSProfile.h"
+#import "../common/MKSKeychainIPC.h"
+#import "MKSAPIDocsController.h"
 #include <arpa/inet.h>
 #include <sys/socket.h>
-
-static NSString *gParams = @"";
-
-static NSString *pickStr(NSString *set, int n) {
-    NSMutableString *s = [NSMutableString string];
-    for (int i = 0; i < n; i++) {
-        uint32_t idx = arc4random_uniform((uint32_t)set.length);
-        [s appendFormat:@"%C", [set characterAtIndex:idx]];
-    }
-    return s;
-}
-static NSString *digits(int n) { return pickStr(@"0123456789", n); }
-static BOOL luhnOK(NSString *s) {
-    int sum = 0; BOOL dbl = NO;
-    for (NSInteger i = s.length - 1; i >= 0; i--) {
-        int d = [s characterAtIndex:i] - '0';
-        if (dbl) { d *= 2; if (d > 9) d -= 9; }
-        sum += d; dbl = !dbl;
-    }
-    return sum % 10 == 0;
-}
-static NSString *genIMEI(void) {
-    for (int t = 0; t < 100; t++) {
-        NSString *body = digits(14);
-        for (int c = 0; c < 10; c++) {
-            NSString *full = [body stringByAppendingFormat:@"%d", c];
-            if (luhnOK(full)) return full;
-        }
-    }
-    return @"000000000000000";
-}
-static NSString *randMac(void) {
-    NSMutableArray *a = [NSMutableArray array];
-    NSString *hex = @"0123456789abcdef";
-    for (int i = 0; i < 6; i++) [a addObject:pickStr(hex, 2)];
-    return [a componentsJoinedByString:@":"];
-}
-static NSString *genParams(void) {
-    NSString *serSet = @"ABCDEFGHJKLMNPQRSTUVWXYZ123456789";
-    NSString *ser = pickStr(serSet, 10);
-    NSString *imei = genIMEI();
-    NSString *imei2 = [imei substringToIndex:14];
-    NSString *mac1 = randMac(), *mac2 = randMac();
-    NSString *ecid = pickStr(@"0123456789ABCDEF", 16);
-    NSString *udid = pickStr(@"0123456789abcdef", 40);
-    NSString *model = @"iPhone16,2";
-    NSString *U = @"ABCDEFGHJKLMNPQRSTUVWXYZ";
-    NSString *part = [NSString stringWithFormat:@"M%C%C%C%CLL/A",
-        [U characterAtIndex:arc4random_uniform((uint32_t)U.length)],
-        [U characterAtIndex:arc4random_uniform((uint32_t)U.length)],
-        (char)('0' + arc4random_uniform(10)),
-        [U characterAtIndex:arc4random_uniform((uint32_t)U.length)]];
-    NSString *board = @"D81AP";
-    NSString *chip = [NSString stringWithFormat:@"T%d%03d", 7 + arc4random_uniform(2), arc4random_uniform(1000)];
-    NSString *build = [NSString stringWithFormat:@"%02d%C%02d", 20 + arc4random_uniform(3),
-        [U characterAtIndex:arc4random_uniform((uint32_t)U.length)], 10 + arc4random_uniform(90)];
-    NSString *ios = [NSString stringWithFormat:@"16.%d.%d", arc4random_uniform(8), arc4random_uniform(10)];
-    return [@[ser, imei, imei2, mac1, mac2, ecid, udid, ser, model, part, board, chip, build, ios]
-            componentsJoinedByString:@"----"];
-}
+#include <unistd.h>
 
 static void do_respring(void) {
     // 通知 root 守护进程 mksd 执行 respring（同 dpp 的 dppd 架构）
@@ -81,13 +23,21 @@ static void do_respring(void) {
 @interface MKSViewController : UIViewController
 @property (nonatomic, strong) UILabel *status;
 @property (nonatomic, strong) UITextView *text;
+@property (nonatomic, strong) MKSProfileStore *profileStore;
+@property (nonatomic, strong) UIButton *cleanupButton;
+@property (nonatomic, strong) UIButton *spoofButton;
+@property (nonatomic, strong) UIButton *restoreButton;
+@property (nonatomic) BOOL cleanupRunning;
 @end
 
 @implementation MKSViewController
 - (void)viewDidLoad {
     [super viewDidLoad];
+    self.profileStore=[[MKSProfileStore alloc] initWithPaths:MKSConfigPaths()];
+    self.navigationController.overrideUserInterfaceStyle=UIUserInterfaceStyleDark;
     self.view.backgroundColor = [UIColor colorWithWhite:0.06 alpha:1];
     self.title = @"MKS 改机";
+    self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"接口文档" style:UIBarButtonItemStylePlain target:self action:@selector(openAPIDocs)];
 
     self.status = [[UILabel alloc] initWithFrame:CGRectMake(20, 100, self.view.bounds.size.width - 40, 30)];
     self.status.textColor = [UIColor colorWithRed:0.3 green:0.9 blue:0.4 alpha:1];
@@ -105,7 +55,7 @@ static void do_respring(void) {
 
     UIButton *b1 = [UIButton buttonWithType:UIButtonTypeSystem];
     b1.frame = CGRectMake(20, 385, self.view.bounds.size.width - 40, 52);
-    [b1 setTitle:@"一键改机（随机生成并通过认证）" forState:UIControlStateNormal];
+    [b1 setTitle:@"一键改机（生成测试参数）" forState:UIControlStateNormal];
     [b1 setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
     b1.backgroundColor = [UIColor colorWithRed:0.15 green:0.45 blue:0.9 alpha:1];
     b1.layer.cornerRadius = 10; b1.titleLabel.font = [UIFont boldSystemFontOfSize:16];
@@ -121,52 +71,114 @@ static void do_respring(void) {
 
     [self.view addSubview:b1];
     [self.view addSubview:b2];
+    self.spoofButton=b1;self.restoreButton=b2;
+    self.cleanupButton=[UIButton buttonWithType:UIButtonTypeSystem];
+    self.cleanupButton.frame=CGRectMake(20,515,self.view.bounds.size.width-40,52);
+    [self.cleanupButton setTitle:@"清理全局 Keychain" forState:UIControlStateNormal];
+    [self.cleanupButton setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
+    self.cleanupButton.backgroundColor=[UIColor colorWithRed:0.55 green:0.3 blue:0.1 alpha:1];
+    self.cleanupButton.layer.cornerRadius=10;
+    self.cleanupButton.titleLabel.font=[UIFont boldSystemFontOfSize:16];
+    [self.cleanupButton addTarget:self action:@selector(confirmKeychainCleanup) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:self.cleanupButton];
 }
-- (NSString *)configPath {
-    NSString *dir = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
-    return [dir stringByAppendingPathComponent:@"mks.config"];
+- (void)openAPIDocs {
+    [self.navigationController pushViewController:[MKSAPIDocsController new] animated:YES];
+}
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    self.status.text=[self currentState];self.text.text=[self currentParams];
+}
+- (NSString *)configPath { return MKSConfigPath(); }
+- (NSDictionary *)currentProfile {
+    return [self.profileStore snapshot];
 }
 - (NSString *)currentState {
-    NSString *s = [NSString stringWithContentsOfFile:[self configPath] encoding:NSUTF8StringEncoding error:nil];
-    if (!s || s.length == 0) return @"状态：未改机（真实设备）";
-    return @"状态：已改机";
+    NSDictionary *p=[self currentProfile];
+    return [p[@"enabled"] boolValue]?@"状态：改机配置已启用":@"状态：改机配置已停用";
 }
 - (NSString *)currentParams {
-    NSString *s = [NSString stringWithContentsOfFile:[self configPath] encoding:NSUTF8StringEncoding error:nil];
-    return (s && s.length) ? s : @"（无参数）";
+    NSDictionary *p=[self currentProfile];
+    if(![p[@"enabled"] boolValue]) return @"（未启用参数）";
+    NSData *data=[NSJSONSerialization dataWithJSONObject:p[@"values"] options:NSJSONWritingPrettyPrinted|NSJSONWritingSortedKeys error:NULL];
+    return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @"（参数读取失败）";
 }
-- (void)writeConfig:(NSString *)p {
-    [p writeToFile:[self configPath] atomically:YES encoding:NSUTF8StringEncoding error:nil];
-    // 同时尝试写共享位置（越狱环境可能允许）
-    [p writeToFile:@"/var/mobile/Media/mks.config" atomically:YES encoding:NSUTF8StringEncoding error:nil];
-    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
-        CFSTR("com.mks.spoof.changed"), NULL, NULL, true);
-    self.status.text = [self currentState];
-    self.text.text = [self currentParams];
+- (BOOL)writeConfig:(NSDictionary *)profile {
+    NSError *error=nil;
+    if(!MKSWriteProfile(profile,[self configPath],&error)) {
+        UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"配置写入失败" message:error.localizedDescription preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
+        return NO;
+    }
+    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),CFSTR("com.mks.spoof.changed"),NULL,NULL,true);
+    self.status.text=[self currentState]; self.text.text=[self currentParams];
+    return YES;
 }
 - (void)doSpoof {
-    gParams = genParams();
-    [self writeConfig:gParams];
-    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"改机成功"
-        message:[gParams stringByAppendingString:@"\n\n3 秒后自动重启桌面"]
-        preferredStyle:UIAlertControllerStyleAlert];
-    [a addAction:[UIAlertAction actionWithTitle:@"立即重启" style:UIAlertActionStyleDefault
-                                         handler:^(UIAlertAction *x) { do_respring(); }]];
-    [self presentViewController:a animated:YES completion:nil];
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{ do_respring(); });
+    if(![self writeConfig:MKSGenerateProfile()]) return;
+    [self restartAfterSave];
 }
 - (void)doRestore {
-    [[NSFileManager defaultManager] removeItemAtPath:[self configPath] error:nil];
-    [[NSFileManager defaultManager] removeItemAtPath:@"/var/mobile/Media/mks.config" error:nil];
-    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
-        CFSTR("com.mks.spoof.changed"), NULL, NULL, true);
-    self.status.text = [self currentState];
-    self.text.text = [self currentParams];
-    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"已还原"
-        message:@"设备信息已恢复真实值" preferredStyle:UIAlertControllerStyleAlert];
-    [a addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
-    [self presentViewController:a animated:YES completion:nil];
+    // An authoritative OFF record prevents old preference/container files from reactivating spoofing.
+    NSDictionary *off=@{@"schemaVersion":@2,@"enabled":@NO,@"name":@"已停用",@"values":@{}};
+    if(![self writeConfig:off]) return;
+    [self restartAfterSave];
+}
+- (void)restartAfterSave {
+    self.status.text=@"配置已保存，正在重启桌面…";
+    self.spoofButton.enabled=NO;self.restoreButton.enabled=NO;self.cleanupButton.enabled=NO;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,500*NSEC_PER_MSEC),dispatch_get_main_queue(),^{do_respring();});
+}
+- (void)confirmKeychainCleanup {
+    if(self.cleanupRunning) return;
+    UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"清理全局 Keychain？"
+        message:@"将清理全局密码、证书和密钥记录，多个 App 可能需要重新登录。与参考插件相同，保留 apple 和 lockdown-identities 对应的记录。执行前会自动备份。"
+        preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"确认清理" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+        [self cleanKeychain];
+    }]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+- (void)cleanKeychain {
+    if(self.cleanupRunning) return;
+    self.cleanupRunning=YES;
+    self.cleanupButton.enabled=NO;self.spoofButton.enabled=NO;self.restoreButton.enabled=NO;
+    [self.cleanupButton setTitle:@"正在备份并清理…" forState:UIControlStateNormal];
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{
+        NSDictionary *result=MKSRequestKeychainClean();
+        dispatch_async(dispatch_get_main_queue(),^{
+            self.cleanupRunning=NO;
+            self.cleanupButton.enabled=YES;self.spoofButton.enabled=YES;self.restoreButton.enabled=YES;
+            [self.cleanupButton setTitle:@"清理全局 Keychain" forState:UIControlStateNormal];
+            BOOL committed=[result[@"committed"] boolValue];
+            BOOL unknown=[result[@"outcomeUnknown"] boolValue];
+            NSString *title=committed?@"Keychain 已清理":(unknown?@"清理结果待核对":@"Keychain 未清理");
+            NSString *message=nil;
+            if(committed) {
+                NSDictionary *counts=result[@"deleted"];
+                NSUInteger total=0;
+                for(NSNumber *count in counts.allValues) total+=count.unsignedIntegerValue;
+                message=[NSString stringWithFormat:@"已按参考插件的规则删除 %lu 条记录。\n备份：%@",(unsigned long)total,
+                    result[@"backup"] ?: @"（备份路径未返回）"];
+            } else if(unknown) {
+                message=@"与清理服务的连接未正常完成，尚未确认执行结果。请先核对服务和备份，避免重复操作。";
+            } else {
+                NSDictionary *messages=@{@"unauthorized":@"当前安装位置未通过服务校验，请使用 DEB 安装的 MKS。",
+                    @"connection":@"尚未连接清理服务，请安装完整的 MKS 1.11 DEB 并确认守护进程已启动。",
+                    @"schema":@"当前 Keychain 数据库结构与清理规则不兼容，操作已停止。",
+                    @"backup":@"备份未完成，操作已停止。",
+                    @"lock":@"数据库正在使用中，本次清理未执行。",
+                    @"database_missing":@"没有找到可清理的 Keychain 数据库。",
+                    @"simulator":@"模拟器仅用于查看界面，清理功能需要越狱设备。"};
+                message=messages[result[@"stage"]] ?: @"清理未提交，数据库事务已撤回。";
+            }
+            UIAlertController *alert=[UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
+            [self presentViewController:alert animated:YES completion:nil];
+        });
+    });
 }
 @end
 

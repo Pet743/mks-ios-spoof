@@ -14,10 +14,15 @@
 #include <sys/wait.h>
 #include <errno.h>
 
+#ifndef APP_PORT
 #define APP_PORT 33236
-#define CFG "/var/mobile/Media/mks.config"
+#endif
 #define FLAG "/var/mobile/Media/mks.respring"
 #define LOGF "/var/mobile/mksd.log"
+extern const char *MKSStatus(void);
+extern void MKSCleanerStartServer(void);
+extern void MKSHTTPStartServer(void);
+extern int MKSHTTPConfigureDeviceID(const char *deviceID);
 
 static void logmsg(const char *fmt, ...) {
     FILE *f = fopen(LOGF, "a");
@@ -29,7 +34,7 @@ static void logmsg(const char *fmt, ...) {
     fprintf(f, "\n"); fclose(f);
 }
 
-static int do_respring(void) {
+int MKSRespring(void) {
     logmsg("respring requested -> killall SpringBoard");
     unlink(FLAG);
     const char *paths[] = {"/var/jb/usr/bin/killall", "/usr/bin/killall", "/var/jb/bin/killall", NULL};
@@ -39,15 +44,25 @@ static int do_respring(void) {
         const char *argv[] = {paths[i], "-9", "SpringBoard", NULL};
         int r = posix_spawn(&pid, paths[i], NULL, NULL, (char *const *)argv, NULL);
         logmsg("spawn %s rc=%d pid=%d", paths[i], r, pid);
-        if (r == 0) return 0;
+        if (r == 0) {
+            int status = 0;
+            while (waitpid(pid, &status, 0) < 0) {
+                if (errno != EINTR) return -1;
+            }
+            return WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : -1;
+        }
     }
     logmsg("no killall found");
     return -1;
 }
 
-int main(void) {
+int main(int argc,char **argv) {
+    if(argc==3 && !strcmp(argv[1],"--set-device-id")) return MKSHTTPConfigureDeviceID(argv[2]);
+    if(argc!=1) return 2;
     signal(SIGPIPE, SIG_IGN);
     logmsg("mksd started (pid=%d, uid=%d)", getpid(), getuid());
+    MKSCleanerStartServer();
+    MKSHTTPStartServer();
 
     int fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (fd < 0) { logmsg("socket failed"); return 1; }
@@ -69,18 +84,21 @@ int main(void) {
     while (1) {
         struct sockaddr_in peer; socklen_t plen = sizeof(peer);
         ssize_t n = recvfrom(fd, buf, sizeof(buf) - 1, 0, (struct sockaddr *)&peer, &plen);
-        if (n <= 0) continue;
+        if (n < 0) { if (errno == EINTR) continue; break; }
+        if (n == 0) continue;
         buf[n] = 0;
-        if (!strncmp(buf, "PING", 4)) {
+        if (n == 4 && !memcmp(buf, "PING", 4)) {
             sendto(fd, "PONG", 4, 0, (struct sockaddr *)&peer, plen);
-        } else if (!strncmp(buf, "RESPRING", 8)) {
-            do_respring();
-            sendto(fd, "OK", 2, 0, (struct sockaddr *)&peer, plen);
-        } else if (!strncmp(buf, "STATUS", 6)) {
-            struct stat st;
-            const char *r = (stat(CFG, &st) == 0) ? "SPOOFED" : "CLEAN";
+        } else if (n == 8 && !memcmp(buf, "RESPRING", 8)) {
+            const char *r = MKSRespring() == 0 ? "OK" : "ERROR";
             sendto(fd, r, strlen(r), 0, (struct sockaddr *)&peer, plen);
+        } else if (n == 6 && !memcmp(buf, "STATUS", 6)) {
+            const char *r = MKSStatus();
+            sendto(fd, r, strlen(r), 0, (struct sockaddr *)&peer, plen);
+        } else {
+            sendto(fd, "INVALID", 7, 0, (struct sockaddr *)&peer, plen);
         }
     }
-    return 0;
+    close(fd);
+    return 1;
 }

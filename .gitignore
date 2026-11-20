@@ -4,3 +4,8 @@
 Payload/
 *.xcuserstate
 .DS_Store
+diagnostics/
+__pycache__/
+/CHANGES.patch
+/VERIFICATION.txt
+/ROLLBACK.sh

@@ -20,6 +20,22 @@
 			<string>identityservicesd</string>
 			<string>WeChat</string>
 			<string>MobileSMS</string>
+			<string>ptpd</string>
+			<string>lsd</string>
+			<string>atc</string>
+			<string>CommCenter</string>
+			<string>adid</string>
+			<string>homed</string>
+			<string>cloudd</string>
+			<string>familycircled</string>
+			<string>AdSheet</string>
+			<string>storebookkeeperd</string>
+			<string>itunescloudd</string>
+			<string>absd</string>
+			<string>fairplayd.H2</string>
+			<string>akd</string>
+			<string>accountsd</string>
+			<string>amsaccountsd</string>
 		</array>
 	</dict>
 </dict>
