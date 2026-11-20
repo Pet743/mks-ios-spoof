@@ -2,6 +2,8 @@
 
 自用 rootless iOS 工具，当前版本 **1.11**。提供一键改机、恢复原机、全局 Keychain 清理，以及同一 Wi-Fi 内的 HTTP 调用。无卡密、激活或远程授权。
 
+[下载 MKS 1.11 完整安装包](https://github.com/Pet743/mks-ios-spoof/releases/tag/v1.11)。源码与总文档已同步到默认 `main` 分支。
+
 ## 使用
 
 安装完整 `dist/mks_1.11.deb` 后，打开 MKS：
