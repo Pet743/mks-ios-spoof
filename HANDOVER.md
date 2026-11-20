@@ -16,6 +16,8 @@
 
 ## 主要修复历史
 
+HTTP 生命周期专项复测：1.11 真机三轮“启动 App → 强制终止并确认进程消失 → HTTP 改机 → HTTP 恢复”，合计六次操作均成功且桌面 PID 更换，重启后的 18 次状态查询成功，daemon PID 始终不变。该结论适用于 App 关闭和 SpringBoard 重启；整机重启、越狱失效或 daemon 停止不在已验证范围。测试后恢复原参数。
+
 1. 共享配置、类型和所有权：统一 App/tweak/daemon 解析；内部 MG 的第二参数是真实 32 位类型输出；替换答案时保留原系统元数据。MGGetStringAnswer 需为调用方提供持有引用，防止 App Store 释放后破坏配置字符串。
 2. 沙箱可读性：旧 `/var/mobile/Media/mks.config` 在多个登录进程中被拒绝，1.9 改为 `/var/jb/var/lib/mks/mks.config` 并验证原子更新与停用行为。
 3. 进程残留：旧 DPP/mkscore 虽已从磁盘卸载，长时间运行的登录 daemon 仍保留内存映射；刷新进程后分别核对磁盘文件、模块和接口结果，不能仅看安装状态。
