@@ -5,10 +5,11 @@
 
 static int checks, failures;
 #define CHECK(condition,label) do { checks++; if(!(condition)) { failures++; fprintf(stderr,"FAIL %s\n",label); } } while(0)
-static CFStringRef originalString(CFStringRef key) { (void)key; return CFSTR("ORIGINAL"); }
+static CFStringRef originalString(CFStringRef key) { return CFEqual(key,CFSTR("ProductName"))?CFSTR("iPhone OS"):CFSTR("ORIGINAL"); }
 static uintptr_t receivedContext;
 static int internalOriginalMode;
 static CFTypeRef originalAnswer(CFStringRef key) {
+    if(key && CFEqual(key,CFSTR("ProductName"))) return CFRetain(CFSTR("iPhone OS"));
     if(key && CFEqual(key,CFSTR("BasebandPostponementStatusBlob"))) return CFBridgingRetain(@{
         @"InternationalMobileEquipmentIdentity":@"original-imei",@"MobileEquipmentIdentifier":@"original-meid",
         @"kCTPostponementInfoUniqueID":@"original-id",@"Other":@"keep"});
@@ -73,6 +74,7 @@ int main(int argc,char **argv) {
         CHECK([MKSMGValue(a,@"UniqueDeviceIDData") length]==20,"UDID bytes");
         CHECK([MKSProfileUUID(a) isEqual:@"00112233-4455-6677-8899-AABBCCDDEEFF"],"initial UUID");
         CHECK(MKSMGValue(a,@"Unknown")==nil,"unknown passthrough");
+        CHECK(MKSMGValue(a,@"ProductName")==nil,"ProductName is an OS name, not the device family");
         CHECK([MKSMGValue(a,@"re6Zb+zwFKJNlkQTUeT+/w") isEqual:MKSMGValue(a,@"UniqueDeviceID")],"observed hashed UDID alias");
         uint32_t forward[]={0xd2800001,0x14000004};
         CHECK(MKSBranchTarget(forward,8,0x1000)==0x1014,"MOV X1 plus B thunk");
@@ -107,10 +109,13 @@ int main(int argc,char **argv) {
         CHECK(MKSWriteProfile(a,path,NULL),"atomic save readback");
         CHECK([[[NSFileManager.defaultManager attributesOfItemAtPath:path error:NULL] objectForKey:NSFilePosixPermissions] unsignedIntValue]==0644,"shared read permissions");
         orig_MGGetStringAnswer=originalString;orig_MGCopyAnswer=originalAnswer;
+        CHECK(CFEqual(my_MGGetStringAnswer(CFSTR("ProductName")),CFSTR("iPhone OS")),"string getter preserves native OS ProductName");
         orig_MGCopyAnswerInternal=originalInternal;orig_equipment=originalEquipment;orig_deviceBuild=originalBuild;
         orig_IORegistryEntryCreateCFProperty=originalProperty;orig_IORegistryEntrySearchCFProperty=originalSearch;
         orig_CFCopySystemVersionDictionary=originalVersion;
         orig_sysctlbyname=originalSysctl;orig_sysctl=originalMib;orig_idfv=originalID;orig_idfa=originalID;
+        CFTypeRef nativeOSName=my_MGCopyAnswer(CFSTR("ProductName"));
+        CHECK(CFEqual(nativeOSName,CFSTR("iPhone OS")),"Copy getter preserves native OS ProductName");CFRelease(nativeOSName);
         CFStringRef borrowed=my_MGGetStringAnswer(CFSTR("SerialNumber"));
         CHECK(CFEqual(borrowed,CFSTR("ABCDEFGHJK")),"Get string");
         // A long UDID is heap-backed; short strings may be immortal tagged pointers.
@@ -136,6 +141,8 @@ int main(int argc,char **argv) {
         CHECK(CFGetTypeID(copied)==CFNumberGetTypeID(),"Copy numeric type");CFRelease(copied);
         copied=my_MGCopyAnswer(CFSTR("UniqueDeviceIDData"));CHECK(CFGetTypeID(copied)==CFDataGetTypeID(),"Copy data type");CFRelease(copied);
         uint32_t metadata[2]={0,0xcafebabe};
+        copied=my_MGCopyAnswerInternal(CFSTR("ProductName"),metadata);
+        CHECK(CFEqual(copied,CFSTR("iPhone OS")) && metadata[0]==9,"internal MG preserves native OS ProductName and type");CFRelease(copied);
         copied=my_MGCopyAnswerInternal(CFSTR("unknown"),metadata);
         CHECK(receivedContext==(uintptr_t)metadata && metadata[0]==9 && CFEqual(copied,CFSTR("ORIGINAL")),"internal MG preserves second argument");CFRelease(copied);
         metadata[0]=0;

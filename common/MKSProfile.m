@@ -167,7 +167,8 @@ id MKSMGValue(NSDictionary *p, NSString *key) {
     if ([key isEqual:@"UniqueDeviceIDData"]) return hexData(v[@"UniqueDeviceID"]);
     if ([key isEqual:@"HardwareModel"]) return v[@"HWModelStr"];
     if ([key isEqual:@"HumanReadableProductVersionString"]) return v[@"ProductVersion"];
-    if ([key isEqual:@"ProductName"]) return [v[@"ProductType"] hasPrefix:@"iPad"]?@"iPad":([v[@"ProductType"] hasPrefix:@"iPhone"]?@"iPhone":nil);
+    // ProductName is the OS product (for example "iPhone OS"), not the
+    // hardware family. Preserve its native value through every MG getter.
     return v[key];
 }
 NSString *MKSProfileUUID(NSDictionary *p) {

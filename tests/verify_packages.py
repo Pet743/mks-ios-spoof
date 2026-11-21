@@ -8,7 +8,7 @@ import zipfile
 
 ROOT=Path(__file__).resolve().parents[1]
 def main():
-    deb=ROOT/'dist/mks_1.11.deb';ipa=ROOT/'dist/MKS-spoofer-1.11.ipa'
+    deb=ROOT/'dist/mks_1.12.deb';ipa=ROOT/'dist/MKS-spoofer-1.12.ipa'
     names=subprocess.check_output(['ar','-t',str(deb)],text=True).splitlines()
     assert names==['debian-binary','control.tar.xz','data.tar.xz'],names
     assert subprocess.check_output(['ar','-p',str(deb),'debian-binary'])==b'2.0\n'
@@ -18,7 +18,7 @@ def main():
         assert b'/var/jb/var/lib/mks' in installer and b'/var/mobile/Media/mks.config' in installer
         assert b'chmod 700 /var/jb/var/lib/mks-keychain-backups' in installer
         assert t.getmember('./preinst').mode==0o755
-        assert b'Version: 1.11\n' in t.extractfile('./control').read()
+        assert b'Version: 1.12\n' in t.extractfile('./control').read()
     data=subprocess.check_output(['ar','-p',str(deb),'data.tar.xz'])
     with tarfile.open(fileobj=io.BytesIO(data),mode='r:xz') as t:
         members=t.getmembers()
@@ -53,7 +53,7 @@ def main():
             local='var/jb/Applications/MKS.app/'+name.removeprefix('Payload/MKS.app/')
             assert z.read(name)==files[local][1],name
         info=plistlib.loads(z.read('Payload/MKS.app/Info.plist'))
-        assert info['CFBundleShortVersionString']=='1.11'
+        assert info['CFBundleShortVersionString']=='1.12'
         assert info['CFBundleIdentifier']=='com.mks.spoofer'
     print(f'PACKAGE binaries={checks} failures=0; deb/IPA payloads, arm64+arm64e, signatures, modes and filter verified')
 if __name__=='__main__':main()

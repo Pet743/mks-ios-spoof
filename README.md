@@ -1,12 +1,12 @@
 # MKS 改机
 
-自用 rootless iOS 工具，当前版本 **1.11**。提供一键改机、恢复原机、全局 Keychain 清理，以及同一 Wi-Fi 内的 HTTP 调用。无卡密、激活或远程授权。
+自用 rootless iOS 工具，当前版本 **1.12**。提供一键改机、恢复原机、全局 Keychain 清理，以及同一 Wi-Fi 内的 HTTP 调用。无卡密、激活或远程授权。
 
-[下载 MKS 1.11 完整安装包](https://github.com/Pet743/mks-ios-spoof/releases/tag/v1.11)。源码与总文档已同步到默认 `main` 分支。
+[下载 MKS 1.12 完整安装包](https://github.com/Pet743/mks-ios-spoof/releases/tag/v1.12)。源码与总文档已同步到默认 `main` 分支。
 
 ## 使用
 
-安装完整 `dist/mks_1.11.deb` 后，打开 MKS：
+安装完整 `dist/mks_1.12.deb` 后，打开 MKS：
 
 - **一键改机**：生成并保存参数，然后自动重启桌面，手机短暂黑屏。
 - **恢复原机**：写入停用配置，然后自动重启桌面。
@@ -37,16 +37,20 @@ python3 scripts/build.py
 python3 tests/verify_packages.py
 ```
 
-输出 `dist/mks_1.11.deb` 和 `dist/MKS-spoofer-1.11.ipa`，均为 arm64 + arm64e。完整 DEB 包含 App、tweak、daemon 和 HTTP 服务；独立 IPA 不安装 daemon。模拟器预览：`python3 scripts/build.py --simulator`。
+输出 `dist/mks_1.12.deb` 和 `dist/MKS-spoofer-1.12.ipa`，均为 arm64 + arm64e。完整 DEB 包含 App、tweak、daemon 和 HTTP 服务；独立 IPA 不安装 daemon。模拟器预览：`python3 scripts/build.py --simulator`。
+
+## 1.12 修复
+
+修复 `ProductName` 的语义错误：该字段表示系统名称（本机为 `iPhone OS`），旧版错误替换为硬件家族 `iPhone`。1.12 保留系统原值，继续通过 `ProductType` 等字段替换设备身份。新增四项回归覆盖解析映射、字符串 getter、Copy getter 和内部带类型 getter。
 
 ## 设备信息替换
 
 App、tweak 和 daemon 共用强类型配置解析器，兼容旧版 14 段配置；覆盖 MobileGestalt、IOKit Create/Search、sysctl、系统版本字典、IDFV 及允许跟踪时的 IDFA。内部 MG hook 保留原系统的类型输出，MGGetStringAnswer 按原函数所有权返回引用；原生缺失的敏感属性保留缺失状态。
 
-主配置 `/var/jb/var/lib/mks/mks.config` 使用原子写入和回读验证。停用记录具有优先权，避免旧配置重新启用。安装时在主配置不存在的情况下迁移旧 Media 配置。用户已反馈改机功能测试正常；本轮没有独立验收 Apple 账户登录成功。
+主配置 `/var/jb/var/lib/mks/mks.config` 使用原子写入和回读验证。停用记录具有优先权，避免旧配置重新启用。安装时在主配置不存在的情况下迁移旧 Media 配置。本轮在改机启用状态完成 App Store 登录与重开保持验收，详见验证摘要。
 
 Keychain 清理与用户提供的 App 清理插件使用相同的五条 SQL 和保护组规则，增加事务与一致快照备份；不同于恢复改机配置，已提交的 Keychain 删除不会因点击「恢复原机」而自动恢复。
 
-## 1.11 设备与发布状态
+## 1.12 设备与发布状态
 
-已在 USB 连接的 iOS 16.3.1 rootless iPhone 安装 1.11，通过局域网实测改机、恢复接口及实际桌面重启，测试后恢复原参数。HTTP 清理执行在合成数据库验证，真实设备 Keychain 未在本轮删除。源码、安装产物及总文档随 1.11 同步；私人诊断、设备编号与访问令牌不纳入仓库。
+已在 USB 连接的 iOS 16.3.1 rootless iPhone 删除旧包后安装 1.12，完成 App 按钮与 HTTP 的三次改机、三次恢复；实际 API 值和桌面重启均已核对，测试后恢复原参数。刷新认证进程后，在改机启用状态重新登录 App Store，并验证重开后仍保持目标账号。HTTP 清理执行在合成数据库验证，真实设备 Keychain 未在本轮删除。源码、安装产物及总文档随 1.12 同步；私人诊断、设备编号与访问令牌不纳入仓库。

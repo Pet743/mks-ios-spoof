@@ -63,7 +63,7 @@ def main():
     run(['codesign','-f','-s','-',build/'mksd'])
     for binary in [app/'MKS',build/'mks.dylib',build/'mksd']:run(['codesign','--verify','--strict',binary])
     dist=ROOT/'dist';dist.mkdir(exist_ok=True)
-    with zipfile.ZipFile(dist/'MKS-spoofer-1.11.ipa','w',compression=zipfile.ZIP_DEFLATED) as z:
+    with zipfile.ZipFile(dist/'MKS-spoofer-1.12.ipa','w',compression=zipfile.ZIP_DEFLATED) as z:
         for p in sorted(app.rglob('*')):
             if p.is_file():z.write(p,'Payload/MKS.app/'+p.relative_to(app).as_posix())
     files=[]
@@ -76,7 +76,7 @@ def main():
         ('var/jb/Library/LaunchDaemons/com.mks.daemon.plist',(ROOT/'daemon/com.mks.daemon.plist').read_bytes(),0o644)]
     control='''Package: com.mks.spoof
 Name: MKS 改机
-Version: 1.11
+Version: 1.12
 Architecture: iphoneos-arm64
 Description: Typed device profile hooks, rootless app and local daemon
 Maintainer: mks
@@ -119,7 +119,7 @@ export PATH=/var/jb/usr/bin:/var/jb/usr/sbin:/var/jb/bin:/var/jb/sbin:/usr/bin:/
 launchctl unload /var/jb/Library/LaunchDaemons/com.mks.daemon.plist 2>/dev/null || true
 launchctl load /var/jb/Library/LaunchDaemons/com.mks.daemon.plist
 uicache -p /var/jb/Applications/MKS.app
-echo 'MKS 1.11 installed. Restart target processes to load the new library.'
+echo 'MKS 1.12 installed. Restart target processes to load the new library.'
 '''
     prerm='''#!/bin/sh
 launchctl unload /var/jb/Library/LaunchDaemons/com.mks.daemon.plist 2>/dev/null || true
@@ -129,8 +129,8 @@ exit 0
 uicache -a 2>/dev/null || true
 exit 0
 '''
-    ar_write(dist/'mks_1.11.deb',[('debian-binary',b'2.0\n'),
+    ar_write(dist/'mks_1.12.deb',[('debian-binary',b'2.0\n'),
         ('control.tar.xz',tar_bytes([('control',control.encode(),0o644),('preinst',preinst.encode(),0o755),('postinst',postinst.encode(),0o755),('prerm',prerm.encode(),0o755),('postrm',postrm.encode(),0o755)])),
         ('data.tar.xz',tar_bytes(files))])
-    print('BUILT dist/mks_1.11.deb dist/MKS-spoofer-1.11.ipa (arm64 arm64e); signature verification passed')
+    print('BUILT dist/mks_1.12.deb dist/MKS-spoofer-1.12.ipa (arm64 arm64e); signature verification passed')
 if __name__=='__main__':main()

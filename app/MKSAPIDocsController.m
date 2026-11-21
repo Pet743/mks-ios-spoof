@@ -28,7 +28,7 @@
 #if TARGET_OS_SIMULATOR
     token=@"SIMULATOR_EXAMPLE_TOKEN";
 #endif
-    self.document.text=MKSHTTPDocumentation(MKSHTTPBaseURL(),token ?: @"（服务未就绪：安装完整 1.11 DEB 后返回重进）");
+    self.document.text=MKSHTTPDocumentation(MKSHTTPBaseURL(),token ?: @"（服务未就绪：安装完整 1.12 DEB 后返回重进）");
 }
 - (void)copyDocument {
     UIPasteboard.generalPasteboard.string=self.document.text;

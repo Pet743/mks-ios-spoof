@@ -71,3 +71,7 @@ python3 tests/verify_packages.py
 ## 1.11 HTTP 补充
 
 1.11 增加 Bearer token 鉴权的 HTTP 清理任务入口，复用同一清理实现及互斥锁。原 Unix socket 仍核对 MKS 可执行路径。1.10 轮次未连接手机的状态属于历史；1.11 已安装到 USB 设备，但真实 Keychain 删除仍未执行。调用方式见 [HTTP API](http-api.md)。
+
+## 1.12 验证补充
+
+本轮复跑 65 项合成数据库检查通过；1.12 的共享映射修复不改变五条清理 SQL。真实设备未在本轮执行 Keychain 删除，改机与恢复不会自动调用清理。安装新版保留已有备份目录。

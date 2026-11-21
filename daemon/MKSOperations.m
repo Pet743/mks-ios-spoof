@@ -18,7 +18,7 @@ static NSString *profilePath(void) {
 NSDictionary *MKSOperationStatus(void) {
     MKSProfileStore *store=[[MKSProfileStore alloc] initWithPaths:@[profilePath()]];
     NSDictionary *profile=[store snapshot];
-    return @{@"ok":@YES,@"version":@"1.11",@"enabled":@([profile[@"enabled"] boolValue]),
+    return @{@"ok":@YES,@"version":@"1.12",@"enabled":@([profile[@"enabled"] boolValue]),
         @"profileValid":@((BOOL)(profile!=nil)),@"deviceId":MKSHTTPDeviceID() ?: NSNull.null};
 }
 NSDictionary *MKSPerformOperation(NSString *action) {
