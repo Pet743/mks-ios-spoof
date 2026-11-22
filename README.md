@@ -7,6 +7,10 @@
 | Rootless（固定 `/var/jb`） | `iphoneos-arm64` | [Rootless DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.15/mks_1.15_rootless_iphoneos-arm64.deb) |
 | RootHide（RootHide bootstrap + ElleKit） | `iphoneos-arm64e` | [RootHide DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.15/mks_1.15_roothide_iphoneos-arm64e.deb) |
 
+## RootHide 登录故障调查
+
+本调查分支测试编号为 **1.15.3 / 119**，尚未通过“改机身份完成 App Store 登录，并与 Apple 后台设备记录一致”的验收。1.15.1 放行原生认证链路的候选已否决；本分支仍保留登录进程的身份 hook。Rootless 不作为本轮故障对象。[候选差异、REA/Craft 分析及未通过结果](docs/roothide-login-investigation.md)。
+
 ## 使用
 
 安装与越狱环境对应的完整 DEB 后，打开 MKS：

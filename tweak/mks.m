@@ -65,6 +65,20 @@ static CFTypeRef my_MGCopyAnswerInternal(CFStringRef key,uint32_t *answerType) {
         CFTypeRef original=orig_MGCopyAnswerInternal?orig_MGCopyAnswerInternal(key,answerType):NULL;
         NSDictionary *p=currentProfile();
         id value=key?MKSMGValue(p,(__bridge NSString *)key):nil;
+#if defined(MKS_ROOTHIDE)
+        // RootHide can withhold native identity answers from a sandboxed
+        // caller. Keep Copy and String getters consistent for configured
+        // fields, including the internal getter's 32-bit type output.
+        if(value && !original) {
+            CFTypeID type=CFGetTypeID((__bridge CFTypeRef)value);
+            uint32_t mgType=type==CFStringGetTypeID()?9:
+                type==CFNumberGetTypeID()?6:type==CFDataGetTypeID()?10:0;
+            if(mgType) {
+                if(answerType) *answerType=mgType;
+                return CFBridgingRetain(value);
+            }
+        }
+#endif
         if(value && original && CFGetTypeID(original)==CFGetTypeID((__bridge CFTypeRef)value)) {
             CFRelease(original);
             return CFBridgingRetain(value);
@@ -164,7 +178,7 @@ static NSString *sysctlValue(NSDictionary *profile,const char *name) {
     return nil;
 }
 static int (*orig_sysctlbyname)(const char *,void *,size_t *,void *,size_t);
-static int my_sysctlbyname(const char *name,void *out,size_t *len,void *newp,size_t newlen) {
+static int __attribute__((unused)) my_sysctlbyname(const char *name,void *out,size_t *len,void *newp,size_t newlen) {
     if(!newp && !newlen) {
         NSString *value=sysctlValue(currentProfile(),name);
         if(value) return MKSStringSysctl(value,out,len);
@@ -172,7 +186,7 @@ static int my_sysctlbyname(const char *name,void *out,size_t *len,void *newp,siz
     return orig_sysctlbyname?orig_sysctlbyname(name,out,len,newp,newlen):-1;
 }
 static int (*orig_sysctl)(int *,u_int,void *,size_t *,void *,size_t);
-static int my_sysctl(int *name,u_int count,void *out,size_t *len,void *newp,size_t newlen) {
+static int __attribute__((unused)) my_sysctl(int *name,u_int count,void *out,size_t *len,void *newp,size_t newlen) {
     if(name && count==2 && !newp && !newlen) {
         const char *key=NULL;
         if(name[0]==CTL_HW && name[1]==HW_MACHINE) key="hw.machine";
@@ -244,9 +258,14 @@ __attribute__((constructor)) static void mks_init(void) {
         hookMG(install);
         hook(install,"IORegistryEntryCreateCFProperty",(void *)my_IORegistryEntryCreateCFProperty,(void **)&orig_IORegistryEntryCreateCFProperty);
         hook(install,"IORegistryEntrySearchCFProperty",(void *)my_IORegistryEntrySearchCFProperty,(void **)&orig_IORegistryEntrySearchCFProperty);
+#if defined(MKS_ROOTHIDE)
+        if([NSProcessInfo.processInfo.processName isEqual:@"Preferences"])
+            hook(install,"_CFCopySystemVersionDictionary",(void *)my_CFCopySystemVersionDictionary,(void **)&orig_CFCopySystemVersionDictionary);
+#else
         hook(install,"_CFCopySystemVersionDictionary",(void *)my_CFCopySystemVersionDictionary,(void **)&orig_CFCopySystemVersionDictionary);
         hook(install,"sysctlbyname",(void *)my_sysctlbyname,(void **)&orig_sysctlbyname);
         hook(install,"sysctl",(void *)my_sysctl,(void **)&orig_sysctl);
+#endif
         Class device=objc_getClass("UIDevice");
         SEL idfv=sel_registerName("identifierForVendor");
         if(message && class_getInstanceMethod(device,idfv)) message(device,idfv,(IMP)my_idfv,(IMP *)&orig_idfv);
@@ -257,7 +276,7 @@ __attribute__((constructor)) static void mks_init(void) {
         installPrivateGetters(message);
         privateMessageInstaller=message;
         _dyld_register_func_for_add_image(onImageLoaded);
-        NSLog(@"MKS 1.15: MG=%d/%d IO=%d/%d sysctl=%d/%d",orig_MGCopyAnswer!=NULL || orig_MGCopyAnswerInternal!=NULL,orig_MGGetStringAnswer!=NULL,
+        NSLog(@"MKS 1.15.3: MG=%d/%d IO=%d/%d sysctl=%d/%d",orig_MGCopyAnswer!=NULL || orig_MGCopyAnswerInternal!=NULL,orig_MGGetStringAnswer!=NULL,
             orig_IORegistryEntryCreateCFProperty!=NULL,orig_IORegistryEntrySearchCFProperty!=NULL,orig_sysctl!=NULL,orig_sysctlbyname!=NULL);
     }
 }
