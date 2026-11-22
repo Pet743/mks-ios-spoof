@@ -276,7 +276,7 @@ __attribute__((constructor)) static void mks_init(void) {
         installPrivateGetters(message);
         privateMessageInstaller=message;
         _dyld_register_func_for_add_image(onImageLoaded);
-        NSLog(@"MKS 1.15.3: MG=%d/%d IO=%d/%d sysctl=%d/%d",orig_MGCopyAnswer!=NULL || orig_MGCopyAnswerInternal!=NULL,orig_MGGetStringAnswer!=NULL,
+        NSLog(@"MKS 1.15.4: MG=%d/%d IO=%d/%d sysctl=%d/%d",orig_MGCopyAnswer!=NULL || orig_MGCopyAnswerInternal!=NULL,orig_MGGetStringAnswer!=NULL,
             orig_IORegistryEntryCreateCFProperty!=NULL,orig_IORegistryEntrySearchCFProperty!=NULL,orig_sysctl!=NULL,orig_sysctlbyname!=NULL);
     }
 }

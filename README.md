@@ -1,15 +1,17 @@
 # MKS 改机
 
-自用 iOS 越狱工具，当前版本 **1.15**，提供 Rootless 和 RootHide 两个安装包。提供一键改机、恢复原机、全局 Keychain 清理，以及同一 Wi-Fi 内的 HTTP 调用。无卡密、激活或远程授权。
+自用 iOS 越狱工具，当前保留版本 **1.15.4**，提供 Rootless 和 RootHide 两个安装包。提供一键改机、恢复原机、全局 Keychain 清理，以及同一 Wi-Fi 内的 HTTP 调用。无卡密、激活或远程授权。
 
 | 越狱环境 | DEB 架构 | 下载 |
 | --- | --- | --- |
-| Rootless（固定 `/var/jb`） | `iphoneos-arm64` | [Rootless DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.15/mks_1.15_rootless_iphoneos-arm64.deb) |
-| RootHide（RootHide bootstrap + ElleKit） | `iphoneos-arm64e` | [RootHide DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.15/mks_1.15_roothide_iphoneos-arm64e.deb) |
+| Rootless（固定 `/var/jb`） | `iphoneos-arm64` | [Rootless DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.15.4/mks_1.15.4_rootless_iphoneos-arm64.deb) |
+| RootHide（RootHide bootstrap + ElleKit） | `iphoneos-arm64e` | [RootHide DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.15.4/mks_1.15.4_roothide_iphoneos-arm64e.deb) |
 
-## RootHide 登录故障调查
+## 1.15.4：已保留的 RootHide 验收版本
 
-本调查分支测试编号为 **1.15.3 / 119**，尚未通过“改机身份完成 App Store 登录，并与 Apple 后台设备记录一致”的验收。1.15.1 放行原生认证链路的候选已否决；本分支仍保留登录进程的身份 hook。Rootless 不作为本轮故障对象。[候选差异、REA/Craft 分析及未通过结果](docs/roothide-login-investigation.md)。
+2026-11-23 在改机启用时完成一次密码提交及双重认证，App Store 登录成功，关闭并重开后仍保持登录；用户提供的 Apple 后台设备详情中，机型、序列号和系统版本与该轮随机参数逐项一致。该结果满足本次约定的验收条件。
+
+RootHide 包仅排除 akd 的直接注入，保留 AppStore、accountsd、amsaccountsd、appstored、itunesstored 的身份替换；Rootless 保持原有过滤范围。版本 **1.15.4 / 120** 固定保存这一行为；后续 DPP 对齐工作另行迭代。[验收与历史候选](docs/roothide-login-investigation.md) · [DPP 功能差异](docs/dpp-parity.md) · [保留版本下载](https://github.com/Pet743/mks-ios-spoof/releases/tag/v1.15.4)。
 
 ## 使用
 
@@ -26,7 +28,7 @@ HTTP 默认端口 `33237`，路径前缀 `/v1/devices/{USB_UDID}`。改机不会
 
 一键改机默认生成 iPhone 15 Pro Max（`iPhone16,2`）、美国地区参数，遵循本地 HTML 的 14 段格式规则；App 展示校验结果、可复制参数行与 JSON。App 和 HTTP daemon 保存新生成参数前均执行校验，失败时不写入、不重启桌面。旧配置继续兼容读取，覆盖升级保留原有参数。
 
-这些检查验证字符串格式及部分字段关系；随机机型、主板、芯片、iOS 与 build 不代表真实硬件组合，也不是 Apple 认证。1.15 没有修改 Apple 登录进程的注入和缓存逻辑。本轮刷新六个目标进程后，218 项 API 读数匹配配置、330 项恢复比对一致；原事件和实际 Apple 登录请求仍待复现。[参数规则](docs/profile-rules.md) · [登录事件核查结论](docs/login-incident.md)
+这些检查验证字符串格式及部分字段关系；随机机型、主板、芯片、iOS 与 build 不代表真实硬件组合，也不是 Apple 认证。1.15 没有修改 Apple 登录进程的注入和缓存逻辑。1.15 当时刷新六个目标进程后，218 项 API 读数匹配配置、330 项恢复比对一致；1.15.4 的实际登录及后台核对见上文。[参数规则](docs/profile-rules.md) · [登录事件核查结论](docs/login-incident.md)
 
 ## 1.14.1 真机修正
 

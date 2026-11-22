@@ -1,20 +1,20 @@
-# MKS 1.15 安装与升级
+# MKS 1.15.4 安装与升级
 
 按越狱环境选择一份 DEB。两个包均包含 App、注入库、daemon、Keychain 清理与 HTTP 服务。
 
 | 越狱环境 | 依赖 | 安装包 |
 | --- | --- | --- |
-| Rootless，越狱根目录是 `/var/jb` | ElleKit | [mks_1.15_rootless_iphoneos-arm64.deb](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.15/mks_1.15_rootless_iphoneos-arm64.deb) |
-| RootHide，使用自己的 bootstrap 根目录 | RootHide 核心包及该环境的 ElleKit | [mks_1.15_roothide_iphoneos-arm64e.deb](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.15/mks_1.15_roothide_iphoneos-arm64e.deb) |
+| Rootless，越狱根目录是 `/var/jb` | ElleKit | [mks_1.15.4_rootless_iphoneos-arm64.deb](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.15.4/mks_1.15.4_rootless_iphoneos-arm64.deb) |
+| RootHide，使用自己的 bootstrap 根目录 | RootHide 核心包及该环境的 ElleKit | [mks_1.15.4_roothide_iphoneos-arm64e.deb](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.15.4/mks_1.15.4_roothide_iphoneos-arm64e.deb) |
 
 用越狱环境的包管理器打开对应文件并安装。也可在该环境的 root shell 中执行对应命令，其中 `/path/to` 换成当前 shell 可访问的下载目录。
 
 ```sh
 # Rootless
-dpkg -i /path/to/mks_1.15_rootless_iphoneos-arm64.deb
+dpkg -i /path/to/mks_1.15.4_rootless_iphoneos-arm64.deb
 
 # RootHide bootstrap shell
-dpkg -i /path/to/mks_1.15_roothide_iphoneos-arm64e.deb
+dpkg -i /path/to/mks_1.15.4_roothide_iphoneos-arm64e.deb
 ```
 
 同一越狱环境可覆盖升级。安装脚本保留已有主配置、HTTP 状态和 Keychain 备份。首次安装时，当主配置不存在而原系统的 `/var/mobile/Media/mks.config` 存在，安装脚本会迁移这份旧配置。切换越狱环境后，两个安装根目录内的数据各自独立。需要先卸载旧包时，执行 `dpkg -r com.mks.spoof`，随后安装对应版本。
@@ -47,7 +47,7 @@ CLI 成功输出 JSON 且退出码为 0。
 
 ## 升级后进程刷新
 
-目标进程重新启动时会加载更新后的 dylib。桌面重启只刷新 SpringBoard。需要刷新 akd、accountsd、amsaccountsd、appstored 或 itunesstored 时，在没有登录或下载进行时重启相关进程，并核对 PID 已变更。
+1.15.4 的 RootHide 包仅排除 akd，AppStore 与其他商店/账户进程保留注入；Rootless 过滤范围保持原样。目标进程重新启动时会加载更新后的 dylib。桌面重启只刷新 SpringBoard。需要刷新 akd、accountsd、amsaccountsd、appstored 或 itunesstored 时，在没有登录或下载进行时重启相关进程，并核对 PID 已变更。
 
 一键改机和恢复原机均会重启桌面。Keychain 清理单独执行。HTTP 返回持久化任务编号，调用方需查询任务终态。
 
@@ -66,4 +66,4 @@ Rootless 使用 `/var/jb`。RootHide 在 bootstrap shell 中使用上表路径�
 
 恢复原机写入 `enabled:false` 配置。Keychain 清理后的备份与恢复是独立操作。[Keychain 文档](keychain-cleaner.md)
 
-1.15 的本机与真机升级检查见[验证记录](validation.md)。覆盖升级不自动重新生成参数；原来的停用/启用状态与配置继续保留。需要使用新生成规则时，通过既有一键改机入口显式执行。HTML 格式通过与 Apple 登录进程的属性一致性是独立的验收项。[参数规则](profile-rules.md) · [登录事件核查](login-incident.md)
+1.15.4 的本机与真机升级检查见[验证记录](validation.md)。覆盖升级不自动重新生成参数；原来的停用/启用状态与配置继续保留。需要使用新生成规则时，通过既有一键改机入口显式执行。HTML 格式通过与 Apple 登录进程的属性一致性是独立的验收项。[参数规则](profile-rules.md) · [登录事件核查](login-incident.md)

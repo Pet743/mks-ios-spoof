@@ -69,6 +69,13 @@ def verify_package(scheme, architecture, prefix, ipa):
     assert launch['StandardErrorPath'] == f'{system_root}/var/mobile/mksd.err'
     tweak = plistlib.loads(files[f'{prefix}/{TWEAK_DIR}/mks.plist'][1])
     assert {'adid', 'CommCenter', 'SpringBoard', 'lockdownd', 'amsaccountsd'} <= set(tweak['Filter']['Executables'])
+    expected_tweak = plistlib.loads((ROOT / 'tweak/mks.plist').read_bytes())
+    if roothide:
+        expected_tweak['Filter']['Executables'].remove('akd')
+    assert tweak == expected_tweak, 'Packaged injection scope differs from the verified scheme'
+    assert ('akd' in tweak['Filter']['Executables']) == (not roothide)
+    assert 'com.apple.AppStore' in tweak['Filter']['Bundles']
+    assert {'accountsd', 'amsaccountsd', 'appstored', 'itunesstored'} <= set(tweak['Filter']['Executables'])
     app_dir = f'{prefix}/Applications/MKS.app/'
     info = plistlib.loads(files[app_dir + 'Info.plist'][1])
     assert info['CFBundleShortVersionString'] == VERSION

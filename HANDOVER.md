@@ -1,10 +1,14 @@
 # MKS 项目交接总文档
 
-更新日期：2026-11-23（Asia/Shanghai）。当前交付版本 **1.15**。
+更新日期：2026-11-23（Asia/Shanghai）。当前保留版本 **1.15.4 / 120**。
 
-## RootHide 登录故障：调查分支 1.15.3（未通过）
+## 1.15.4 固定版本：本轮 RootHide 验收通过
 
-当前新增目标是后台设备身份一致，而不是仅在配置启用时登录。已实际用 REA 与 Craft Anything 分析软件源的 RootHide DPP；已拒绝放行原生认证进程的 1.15.1 方案。本分支保留完整身份注入，实验修正 RootHide MG 空答案与类型输出，并缩小额外运行环境 hook；1.15.2、1.15.3 均仍遇到额外密码确认。**没有完成 Apple 后台随机设备匹配，不标记修复成功。** 全部候选与复现记录见[专项调查](docs/roothide-login-investigation.md)。
+用户要求同时满足“改机启用后 App Store 登录成功”和“后台设备字段与随机参数一致”。本轮退出媒体账号、关闭 App Store、通过 MKS spoof 生成全新参数，刷新登录进程后，只提交一次密码并完成双重认证；登录后重开保持。用户提供后台设备详情截图，机型、序列号、系统版本三项均与该轮配置一致。
+
+1.15.4 将手机已验证的过滤调整写入构建：RootHide 仅移除 akd，AppStore 和其他商店/账户进程保留注入；Rootless 过滤不变。保留此前 RootHide MG 空答案类型修正、Preferences 专用系统版本 hook 和不安装 sysctl hook 的组合。这些是联合验证结果，不将成功归因于唯一一个 hook。
+
+已按用户要求冻结此版本。DPP 可能更完善的 Settings 显示 getter、特定设备信息控制器及 MEID 默认参数差异只记录，不加入本版。后续从新版本迭代，1.15.4 的源码、安装包和验收记录保留。[专项证据](docs/roothide-login-investigation.md) · [功能差异](docs/dpp-parity.md) · [v1.15.4](https://github.com/Pet743/mks-ios-spoof/releases/tag/v1.15.4)。
 
 ## 1.15 交付与未结事项
 

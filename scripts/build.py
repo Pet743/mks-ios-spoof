@@ -168,6 +168,19 @@ exit 0
     ]
 
 
+def tweak_filter(scheme):
+    payload = (ROOT / 'tweak/mks.plist').read_bytes()
+    if scheme == 'rootless':
+        return payload
+    if scheme != 'roothide':
+        raise ValueError(f'Unknown scheme: {scheme}')
+    info = plistlib.loads(payload)
+    # RootHide login was verified with AppStore and store services still
+    # injected, while akd retained its native authentication environment.
+    info['Filter']['Executables'].remove('akd')
+    return plistlib.dumps(info)
+
+
 def build_device(scheme, ipa):
     architecture, prefix = SCHEMES[scheme]
     roothide = scheme == 'roothide'
@@ -224,7 +237,7 @@ def build_device(scheme, ipa):
             launch_plist[key] = '/rootfs' + launch_plist[key]
     files += [
         ((prefix + f'{TWEAK_DIR}/mks.dylib').lstrip('/'), dylib.read_bytes(), 0o755),
-        ((prefix + f'{TWEAK_DIR}/mks.plist').lstrip('/'), (ROOT / 'tweak/mks.plist').read_bytes(), 0o644),
+        ((prefix + f'{TWEAK_DIR}/mks.plist').lstrip('/'), tweak_filter(scheme), 0o644),
         ((prefix + '/usr/libexec/mksd').lstrip('/'), daemon.read_bytes(), 0o755),
         ((prefix + DAEMON_PLIST).lstrip('/'), plistlib.dumps(launch_plist), 0o644),
     ]
