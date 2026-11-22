@@ -13,6 +13,7 @@
 #include <spawn.h>
 #include <sys/wait.h>
 #include <errno.h>
+#include "../common/MKSPaths.h"
 
 #ifndef APP_PORT
 #define APP_PORT 33236
@@ -37,7 +38,7 @@ static void logmsg(const char *fmt, ...) {
 int MKSRespring(void) {
     logmsg("respring requested -> killall SpringBoard");
     unlink(FLAG);
-    const char *paths[] = {"/var/jb/usr/bin/killall", "/usr/bin/killall", "/var/jb/bin/killall", NULL};
+    const char *paths[] = {MKS_JB_PATH("/usr/bin/killall"), "/usr/bin/killall", MKS_JB_PATH("/bin/killall"), NULL};
     for (int i = 0; paths[i]; i++) {
         if (access(paths[i], X_OK) != 0) continue;
         pid_t pid = 0;

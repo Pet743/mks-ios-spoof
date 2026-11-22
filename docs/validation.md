@@ -1,4 +1,19 @@
-# MKS 1.12 验证摘要
+# MKS 验证摘要
+
+## 1.13 本机检查
+
+2026-11-22（Asia/Shanghai）完成两个版本的构建和本机验证。
+
+| 检查 | Rootless | RootHide |
+| --- | --- | --- |
+| DEB 架构 | `iphoneos-arm64` | `iphoneos-arm64e` |
+| 包布局 | `/var/jb` | bootstrap 根目录 |
+| App、插件与 daemon | arm64 / arm64e，两种切片的签名和路径检查通过 | arm64 / arm64e，两种切片均链接 RootHide 路径库，签名和路径检查通过 |
+| 安装脚本与 LaunchDaemon | 包中四个脚本语法及预期路径通过 | 包中四个脚本语法及 bootstrap 路径通过 |
+
+主机回归通过 389 项改机、65 项合成 Keychain、9 项 UDP 和 39 项 HTTP 检查。本轮没有连接 iPhone。1.13 的真机安装、App 注册、注入与 daemon 运行均待设备验证。
+
+## 1.12 历史验收
 
 日期：2026-11-21（Asia/Shanghai）。此文件为公开摘要，私人设备编号、地址、令牌、配置、日志和截图不上传。
 

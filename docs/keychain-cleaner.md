@@ -35,7 +35,7 @@ SQL 的 `<>` 不匹配 NULL，因此空 agrp 记录也保留。以上保留规�
 - root daemon 使用独立 Unix socket，核对内核提供的 peer UID、PID 和真实可执行文件路径。仅完整 DEB 的 MKS App 可调用。原 UDP PING/STATUS/RESPRING 接口不接受清理指令。
 - 先校验现有数据库结构并取得写事务锁，再通过 SQLite backup API 保存包含 WAL 已提交数据的一致快照。备份失败不删除。
 - 四个条目表采用与样本相同的谓词，在一个事务内删除；不存在 sqlite_sequence 时跳过该可选表。任何步骤出错则回滚，成功时核对剩余数量和数据库完整性后提交。
-- 备份放在独立 root 所有的 `/var/jb/var/lib/mks-keychain-backups`，避免放入 mobile 可写的配置目录。备份目录 0700，文件 0600；结果不输出密码、令牌或密钥内容。
+- 备份放在独立 root 所有的 越狱根目录下的 `var/lib/mks-keychain-backups`，避免放入 mobile 可写的配置目录。备份目录 0700，文件 0600；结果不输出密码、令牌或密钥内容。
 - 对齐样本确认回调，只清理数据库；不注入缺失的 KeychainFix，也不自动终止 securityd 或重启桌面。
 - 保留现有改机配置、共享路径和 hook 代码；清理不会更换改机参数，也不自动触发重启桌面。
 

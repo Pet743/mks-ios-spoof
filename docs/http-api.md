@@ -1,6 +1,6 @@
 # MKS 1.12 HTTP API
 
-MKS 通过独立的 root daemon 提供 HTTP 服务。在已验证的 rootless 设备上，强制关闭 MKS App、重启桌面后仍可调用；前提是 daemon 仍运行、越狱环境有效，且调用端能连接手机网络。App 右上角「接口文档」展示当前 Wi‑Fi 地址、设备编号、访问令牌与完整示例，右上角「复制」可复制文档。
+MKS 通过独立的 root daemon 提供 HTTP 服务。在 1.12 已验证的 Rootless 设备上，强制关闭 MKS App、重启桌面后仍可调用；前提是 daemon 仍运行、越狱环境有效，且调用端能连接手机网络。App 右上角「接口文档」展示当前 Wi‑Fi 地址、设备编号、访问令牌与完整示例，右上角「复制」可复制文档。
 
 2026-11-20 补充了三轮真机专项测试：每轮启动并强制关闭 App，确认 App 进程消失后，分别通过 HTTP 执行改机和恢复。六次操作均返回 202 并进入 succeeded，六次均观察到桌面 PID 更换；重启后的 18 次状态查询全部返回 200，daemon PID 始终不变。测试结束后恢复原参数，没有执行真实 Keychain 清理。
 
@@ -10,14 +10,18 @@ MKS 通过独立的 root daemon 提供 HTTP 服务。在已验证的 rootless �
 
 ## 连接与设备标识
 
-默认监听 IPv4 `0.0.0.0:33237`，用于同一可信 Wi‑Fi。访问使用随机生成的本机 Bearer token，保存在 `/var/jb/var/lib/mks-http/token`，不上传到服务器。HTTP 本身未加密，不将端口映射到公网。
+默认监听 IPv4 `0.0.0.0:33237`，用于同一可信 Wi‑Fi。访问使用随机生成的本机 Bearer token，保存在 越狱根目录下的 `var/lib/mks-http/token`，不上传到服务器。HTTP 本身未加密，不将端口映射到公网。
 
-设备路由使用 USB 连接报告的 UDID，独立保存在 `/var/jb/var/lib/mks-http/device-id`；MKS 的随机改机参数不会覆盖它。UDID 用于选设备，token 用于授权，两者用途不同。
+设备路由使用 USB 连接报告的 UDID，独立保存在 越狱根目录下的 `var/lib/mks-http/device-id`；MKS 的随机改机参数不会覆盖它。UDID 用于选设备，token 用于授权，两者用途不同。
 
 首次在新设备安装时，从 USB 工具获取该设备实际 UDID，然后在设备 root shell 配置一次：
 
 ```sh
+# Rootless
 /var/jb/usr/libexec/mksd --set-device-id 'USB_DEVICE_UDID'
+
+# RootHide bootstrap shell
+/usr/libexec/mksd --set-device-id 'USB_DEVICE_UDID'
 ```
 
 配置和令牌在升级时保留。尚未配置设备编号时，HTTP 返回 `503 device_id_not_configured`。更换设备应重新配置，不复制另一台手机的 device-id 文件。
@@ -102,7 +106,7 @@ Keychain 成功结果包含 `committed:true`、`deleted` 各表数量和 `backup
 
 每个 POST 必须带 `Idempotency-Key`，长度 1–128，允许字母、数字和 `- _ : .`。每次**新操作**使用新 Key；同一操作因网络问题重试时使用原 Key，返回原任务，不重复执行。相同 Key 换用另一种操作返回 409。
 
-任务按接收顺序串行执行。队列与 Key 保存到 `/var/jb/var/lib/mks-http/jobs.json`，最多保留最近 100 项；达到上限时只淘汰已结束任务。被淘汰的 Key 不再具备去重记录。daemon 重启时将遗留 queued/running 任务标记 interrupted，不自动重放。
+任务按接收顺序串行执行。队列与 Key 保存到 越狱根目录下的 `var/lib/mks-http/jobs.json`，最多保留最近 100 项；达到上限时只淘汰已结束任务。被淘汰的 Key 不再具备去重记录。daemon 重启时将遗留 queued/running 任务标记 interrupted，不自动重放。
 
 出现 interrupted 或 `outcomeUnknown:true` 时，先核对 `/status`、配置及备份，而不是换新 Key 自动重试。状态文件损坏时服务停止接收 HTTP 操作，避免丢掉去重记录后重复执行。
 

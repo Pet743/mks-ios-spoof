@@ -1,8 +1,15 @@
 # MKS 项目交接总文档
 
-更新日期：2026-11-21（Asia/Shanghai）。当前交付版本 **1.12**。
+更新日期：2026-11-22（Asia/Shanghai）。当前交付版本 **1.13**。
 
-## 当前功能与验收
+## 1.13 双发行版
+
+- Rootless DEB 使用 `iphoneos-arm64` 和固定的 `/var/jb`。
+- RootHide DEB 使用 `iphoneos-arm64e`，安装脚本运行于 bootstrap 路径环境，程序通过官方 `jbroot()` 解析越狱文件路径。
+- 同一越狱环境内升级会复用已有配置、HTTP 状态和 Keychain 备份目录。两种环境切换时各自使用自己的数据目录。
+- 两个 DEB 已通过本机构建和验证。1.13 真机安装与注入待验证。下载见 [v1.13](https://github.com/Pet743/mks-ios-spoof/releases/tag/v1.13)，[安装步骤](docs/install.md)。
+
+## 功能与历史真机验收
 
 | 功能 | 当前实现与证据 |
 | --- | --- |

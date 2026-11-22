@@ -15,7 +15,7 @@ static BOOL authorized(int fd) {
     ProcessPath path=(ProcessPath)dlsym(RTLD_DEFAULT,"proc_pidpath");
     char process[4096]={0};
     if(!path || path(pid,process,sizeof(process))<=0) return NO;
-    return MKSKeychainPeerAllowed(uid,@(process),@"/var/jb/Applications/MKS.app/MKS");
+    return MKSKeychainPeerAllowed(uid,@(process),MKS_JB_NS_PATH("/Applications/MKS.app/MKS"));
 }
 static void serveClient(int fd) {
     struct timeval timeout={4,0};int yes=1;
@@ -49,17 +49,18 @@ static void serveClient(int fd) {
 void MKSCleanerStartServer(void) {
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{
         @autoreleasepool {
+            const char *socketPath=MKS_KEYCHAIN_SOCKET;
+            struct sockaddr_un address={0};address.sun_family=AF_UNIX;
+            if(strlcpy(address.sun_path,socketPath,sizeof(address.sun_path))>=sizeof(address.sun_path)) return;
             struct stat st;
-            if(lstat(MKS_KEYCHAIN_SOCKET,&st)==0) {
+            if(lstat(socketPath,&st)==0) {
                 if(!S_ISSOCK(st.st_mode) || st.st_uid!=0) return;
-                if(unlink(MKS_KEYCHAIN_SOCKET)!=0) return;
+                if(unlink(socketPath)!=0) return;
             }
             int server=socket(AF_UNIX,SOCK_STREAM,0);
             if(server<0) return;
-            struct sockaddr_un address={0};address.sun_family=AF_UNIX;
-            strlcpy(address.sun_path,MKS_KEYCHAIN_SOCKET,sizeof(address.sun_path));
             if(bind(server,(struct sockaddr *)&address,sizeof(address))!=0 ||
-                chown(MKS_KEYCHAIN_SOCKET,0,501)!=0 || chmod(MKS_KEYCHAIN_SOCKET,0660)!=0 || listen(server,4)!=0) {
+                chown(socketPath,0,501)!=0 || chmod(socketPath,0660)!=0 || listen(server,4)!=0) {
                 close(server);return;
             }
             while(1) {
@@ -68,7 +69,7 @@ void MKSCleanerStartServer(void) {
                 @autoreleasepool { serveClient(client); }
                 close(client);
             }
-            close(server);unlink(MKS_KEYCHAIN_SOCKET);
+            close(server);unlink(socketPath);
         }
     });
 }

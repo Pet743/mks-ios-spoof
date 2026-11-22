@@ -1,12 +1,15 @@
 # MKS 改机
 
-自用 rootless iOS 工具，当前版本 **1.12**。提供一键改机、恢复原机、全局 Keychain 清理，以及同一 Wi-Fi 内的 HTTP 调用。无卡密、激活或远程授权。
+自用 iOS 越狱工具，当前版本 **1.13**，提供 Rootless 和 RootHide 两个安装包。提供一键改机、恢复原机、全局 Keychain 清理，以及同一 Wi-Fi 内的 HTTP 调用。无卡密、激活或远程授权。
 
-[下载 MKS 1.12 完整安装包](https://github.com/Pet743/mks-ios-spoof/releases/tag/v1.12)。源码与总文档已同步到默认 `main` 分支。
+| 越狱环境 | DEB 架构 | 下载 |
+| --- | --- | --- |
+| Rootless（固定 `/var/jb`） | `iphoneos-arm64` | [Rootless DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.13/mks_1.13_rootless_iphoneos-arm64.deb) |
+| RootHide（RootHide bootstrap + ElleKit） | `iphoneos-arm64e` | [RootHide DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.13/mks_1.13_roothide_iphoneos-arm64e.deb) |
 
 ## 使用
 
-安装完整 `dist/mks_1.12.deb` 后，打开 MKS：
+安装与越狱环境对应的完整 DEB 后，打开 MKS：
 
 - **一键改机**：生成并保存参数，然后自动重启桌面，手机短暂黑屏。
 - **恢复原机**：写入停用配置，然后自动重启桌面。
@@ -37,7 +40,13 @@ python3 scripts/build.py
 python3 tests/verify_packages.py
 ```
 
-输出 `dist/mks_1.12.deb` 和 `dist/MKS-spoofer-1.12.ipa`，均为 arm64 + arm64e。完整 DEB 包含 App、tweak、daemon 和 HTTP 服务；独立 IPA 不安装 daemon。模拟器预览：`python3 scripts/build.py --simulator`。
+默认在 `dist/` 输出上表两种 DEB。两个包的 App、tweak 和 daemon 均包含 arm64 与 arm64e Mach-O。RootHide 构建首次下载并校验固定版本的官方路径 API 头文件和链接存根。
+
+用 `--scheme rootless` 或 `--scheme roothide` 可单独构建及校验某个包。用 `python3 scripts/build.py --scheme rootless --ipa` 可另外构建不含 daemon 的独立 IPA。用 `python3 scripts/build.py --simulator` 可生成模拟器 App。
+
+## 1.13 验证状态
+
+两个 DEB 均通过主机构建、签名、包布局、载荷、Mach-O 链接和安装脚本语法检查。1.13 的真机安装与注入待验证。历史真机结果及本版检查见[验证记录](docs/validation.md)。
 
 ## 1.12 修复
 
@@ -47,7 +56,7 @@ python3 tests/verify_packages.py
 
 App、tweak 和 daemon 共用强类型配置解析器，兼容旧版 14 段配置；覆盖 MobileGestalt、IOKit Create/Search、sysctl、系统版本字典、IDFV 及允许跟踪时的 IDFA。内部 MG hook 保留原系统的类型输出，MGGetStringAnswer 按原函数所有权返回引用；原生缺失的敏感属性保留缺失状态。
 
-主配置 `/var/jb/var/lib/mks/mks.config` 使用原子写入和回读验证。停用记录具有优先权，避免旧配置重新启用。安装时在主配置不存在的情况下迁移旧 Media 配置。本轮在改机启用状态完成 App Store 登录与重开保持验收，详见验证摘要。
+主配置位于各自越狱根目录下的 `var/lib/mks/mks.config`，使用原子写入和回读验证。停用记录具有优先权，避免旧配置重新启用。安装时在主配置不存在的情况下迁移旧 Media 配置。1.12 在改机启用状态完成 App Store 登录与重开保持验收，详见验证摘要。
 
 Keychain 清理与用户提供的 App 清理插件使用相同的五条 SQL 和保护组规则，增加事务与一致快照备份；不同于恢复改机配置，已提交的 Keychain 删除不会因点击「恢复原机」而自动恢复。
 

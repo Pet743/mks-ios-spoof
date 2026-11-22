@@ -27,7 +27,10 @@ NSDictionary *MKSRequestKeychainClean(void) {
     setsockopt(fd,SOL_SOCKET,SO_RCVTIMEO,&timeout,sizeof(timeout));
     setsockopt(fd,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout));
     struct sockaddr_un address={0};address.sun_family=AF_UNIX;
-    strlcpy(address.sun_path,MKS_KEYCHAIN_SOCKET,sizeof(address.sun_path));
+    if(strlcpy(address.sun_path,MKS_KEYCHAIN_SOCKET,sizeof(address.sun_path))>=sizeof(address.sun_path)) {
+        close(fd);
+        return @{@"ok":@NO,@"committed":@NO,@"stage":@"connection"};
+    }
     NSDictionary *result=nil;BOOL requested=NO;
     if(connect(fd,(struct sockaddr *)&address,sizeof(address))==0) {
         const char command[]=MKS_KEYCHAIN_COMMAND;

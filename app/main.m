@@ -166,7 +166,7 @@ static void do_respring(void) {
                 message=@"与清理服务的连接未正常完成，尚未确认执行结果。请先核对服务和备份，避免重复操作。";
             } else {
                 NSDictionary *messages=@{@"unauthorized":@"当前安装位置未通过服务校验，请使用 DEB 安装的 MKS。",
-                    @"connection":@"尚未连接清理服务，请安装完整的 MKS 1.12 DEB 并确认守护进程已启动。",
+                    @"connection":@"尚未连接清理服务，请安装完整的 MKS DEB 并确认守护进程已启动。",
                     @"schema":@"当前 Keychain 数据库结构与清理规则不兼容，操作已停止。",
                     @"backup":@"备份未完成，操作已停止。",
                     @"lock":@"数据库正在使用中，本次清理未执行。",

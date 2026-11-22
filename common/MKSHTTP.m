@@ -33,7 +33,7 @@ NSString *MKSHTTPDocumentation(NSString *baseURL,NSString *token) {
     baseURL=[baseURL stringByAppendingFormat:@"/v1/devices/%@",device];
     return [NSString stringWithFormat:
         @"MKS HTTP API · v1\n\n地址\n%@\n\n访问令牌\n%@\n\n"
-        "同一 Wi-Fi 调用；服务由 daemon 提供，关闭 App 仍可调用。需要安装完整 1.12 DEB。"
+        "同一 Wi-Fi 调用；服务由 daemon 提供，关闭 App 仍可调用。需要安装完整 MKS DEB。"
         "明文 HTTP 仅用于可信局域网；不要做公网端口映射。令牌是本机接口凭据，无卡密或远程授权。\n\n"
         "认证\nAuthorization: Bearer <令牌>\n\n"
         "设备标识\n地址中的 devices 后面是 USB UDID；改机不修改本服务保存的路由标识。编号需与当前手机一致。\n\n"

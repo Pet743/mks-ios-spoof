@@ -1,4 +1,5 @@
 #import "MKSProfile.h"
+#include "MKSPaths.h"
 #include <TargetConditionals.h>
 #include <sys/stat.h>
 #include <errno.h>
@@ -9,8 +10,7 @@ NSString *MKSConfigPath(void) {
     return [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject stringByAppendingPathComponent:@"mks.config"];
 #else
     // Sandboxed App Store/AuthKit processes cannot read mobile's Media directory.
-    // The jailbreak root is readable to injected processes on this rootless host.
-    return @"/var/jb/var/lib/mks/mks.config";
+    return MKS_JB_NS_PATH("/var/lib/mks/mks.config");
 #endif
 }
 NSArray<NSString *> *MKSConfigPaths(void) {

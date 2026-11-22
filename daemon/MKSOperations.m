@@ -1,4 +1,5 @@
 #import "MKSOperations.h"
+#include "../common/MKSPaths.h"
 #import "../common/MKSProfile.h"
 #import "../common/MKSKeychain.h"
 #import "../common/MKSHTTP.h"
@@ -18,7 +19,7 @@ static NSString *profilePath(void) {
 NSDictionary *MKSOperationStatus(void) {
     MKSProfileStore *store=[[MKSProfileStore alloc] initWithPaths:@[profilePath()]];
     NSDictionary *profile=[store snapshot];
-    return @{@"ok":@YES,@"version":@"1.12",@"enabled":@([profile[@"enabled"] boolValue]),
+    return @{@"ok":@YES,@"version":@"1.13",@"enabled":@([profile[@"enabled"] boolValue]),
         @"profileValid":@((BOOL)(profile!=nil)),@"deviceId":MKSHTTPDeviceID() ?: NSNull.null};
 }
 NSDictionary *MKSPerformOperation(NSString *action) {
@@ -28,7 +29,7 @@ NSDictionary *MKSPerformOperation(NSString *action) {
 #ifdef MKS_HTTP_TEST
             return MKSKeychainClean(@(getenv("MKS_TEST_KEYCHAIN")),@(getenv("MKS_TEST_BACKUPS")));
 #else
-            return MKSKeychainClean(@"/var/Keychains/keychain-2.db",@"/var/jb/var/lib/mks-keychain-backups");
+            return MKSKeychainClean(@"/var/Keychains/keychain-2.db",MKS_JB_NS_PATH("/var/lib/mks-keychain-backups"));
 #endif
         }
         if(![@[@"spoof",@"restore"] containsObject:action]) return @{@"ok":@NO,@"error":@"unknown_action"};

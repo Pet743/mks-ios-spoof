@@ -1,6 +1,7 @@
 // Typed, immutable profile snapshots shared by every MKS read path.
 #import "../common/MKSProfile.h"
 #include "../common/MKSBranch.h"
+#include "../common/MKSPaths.h"
 #import <objc/runtime.h>
 #import <objc/message.h>
 #include <dlfcn.h>
@@ -232,8 +233,8 @@ static void onImageLoaded(const struct mach_header *header,intptr_t slide) {
 __attribute__((constructor)) static void mks_init(void) {
     @autoreleasepool {
         store=[[MKSProfileStore alloc] initWithPaths:MKSConfigPaths()];
-        void *framework=dlopen("/var/jb/usr/lib/libellekit.dylib",RTLD_NOW|RTLD_GLOBAL);
-        if(!framework) framework=dlopen("/var/jb/usr/lib/libsubstrate.dylib",RTLD_NOW|RTLD_GLOBAL);
+        void *framework=dlopen(MKS_JB_PATH("/usr/lib/libellekit.dylib"),RTLD_NOW|RTLD_GLOBAL);
+        if(!framework) framework=dlopen(MKS_JB_PATH("/usr/lib/libsubstrate.dylib"),RTLD_NOW|RTLD_GLOBAL);
         HookFunction install=(HookFunction)dlsym(RTLD_DEFAULT,"MSHookFunction");
         HookMessage message=(HookMessage)dlsym(RTLD_DEFAULT,"MSHookMessageEx");
         if(!install) { NSLog(@"MKS: hook framework unavailable; no hooks installed"); return; }
@@ -256,7 +257,7 @@ __attribute__((constructor)) static void mks_init(void) {
         installPrivateGetters(message);
         privateMessageInstaller=message;
         _dyld_register_func_for_add_image(onImageLoaded);
-        NSLog(@"MKS 1.12: MG=%d/%d IO=%d/%d sysctl=%d/%d",orig_MGCopyAnswer!=NULL || orig_MGCopyAnswerInternal!=NULL,orig_MGGetStringAnswer!=NULL,
+        NSLog(@"MKS 1.13: MG=%d/%d IO=%d/%d sysctl=%d/%d",orig_MGCopyAnswer!=NULL || orig_MGCopyAnswerInternal!=NULL,orig_MGGetStringAnswer!=NULL,
             orig_IORegistryEntryCreateCFProperty!=NULL,orig_IORegistryEntrySearchCFProperty!=NULL,orig_sysctl!=NULL,orig_sysctlbyname!=NULL);
     }
 }
