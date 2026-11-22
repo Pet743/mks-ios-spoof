@@ -1,8 +1,14 @@
 # MKS 项目交接总文档
 
-更新日期：2026-11-22（Asia/Shanghai）。当前交付版本 **1.13**。
+更新日期：2026-11-22（Asia/Shanghai）。当前交付版本 **1.14**。
 
-## 1.13 双发行版
+## 1.14 对接改进
+
+App 新增本地 USB UDID 绑定，重绑定比较用户确认的原值，CLI 输出 JSON 与可靠退出码。状态接口增加 apiVersion、deviceConfigured、environment、capabilities 和 installationId。清理回执增加 backupId、backupCreated 和 backupFormatVersion。任务持久化失败后拒绝新操作，既有 job 可继续查询；损坏账本保持原文件并拒绝启动 HTTP listener。
+
+本版已通过 Rootless / RootHide 两个分支的主机故障回归和模拟器绑定交互。真机部署及三动作验收待完成。安装包见 [v1.14](https://github.com/Pet743/mks-ios-spoof/releases/tag/v1.14)，对接方优先阅读 [首次接入与恢复流程](docs/integration.md) 和 [HTTP 协议](docs/http-api.md)。
+
+## 1.13 双发行版历史
 
 - Rootless DEB 使用 `iphoneos-arm64` 和固定的 `/var/jb`。
 - RootHide DEB 使用 `iphoneos-arm64e`，安装脚本运行于 bootstrap 路径环境，程序通过官方 `jbroot()` 解析越狱文件路径。

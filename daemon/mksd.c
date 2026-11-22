@@ -59,7 +59,10 @@ int MKSRespring(void) {
 
 int main(int argc,char **argv) {
     if(argc==3 && !strcmp(argv[1],"--set-device-id")) return MKSHTTPConfigureDeviceID(argv[2]);
-    if(argc!=1) return 2;
+    if(argc!=1) {
+        fputs("{\"ok\":false,\"error\":\"invalid_arguments\"}\n",stdout);
+        return 2;
+    }
     signal(SIGPIPE, SIG_IGN);
     logmsg("mksd started (pid=%d, uid=%d)", getpid(), getuid());
     MKSCleanerStartServer();

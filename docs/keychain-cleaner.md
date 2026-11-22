@@ -75,3 +75,7 @@ python3 tests/verify_packages.py
 ## 1.12 验证补充
 
 本轮复跑 65 项合成数据库检查通过；1.12 的共享映射修复不改变五条清理 SQL。真实设备未在本轮执行 Keychain 删除，改机与恢复不会自动调用清理。安装新版保留已有备份目录。
+
+## 1.14 回执字段
+
+备份标识由 `backupId` 提供，`backupFormatVersion:1` 表示 SQLite 一致快照，`backupCreated:true` 表示备份已校验并同步。旧 `backup` 路径保留用于本地诊断。删除在备份完成后执行，只有提交成功才返回 `committed:true`。提交错误或回滚失败会设置 `outcomeUnknown:true`，需先核对原 job 与备份。主机测试覆盖合成备份失败、事务回滚和注入的 COMMIT 失败。真实 Keychain 验收需专用测试数据。

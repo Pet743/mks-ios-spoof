@@ -1,5 +1,37 @@
 # MKS 验证摘要
 
+## 1.14 本机检查
+
+2026-11-22（Asia/Shanghai）完成本轮改进与本地验收。
+
+| 检查 | 结果 |
+| --- | --- |
+| 改机核心 | 389 项通过，覆盖字段类型、配置、并发与恢复 |
+| Keychain 合成数据 | 77 项通过，覆盖备份标识、备份失败不删除、事务回滚和注入的 COMMIT 失败 |
+| UDP daemon | 9 项通过 |
+| HTTP Rootless / RootHide | 各 61 项通过，覆盖未绑定、认证、状态增量字段、旧 Key/job、持久化故障及账本损坏 |
+| CLI / App IPC / HTTP 绑定 | 69 项通过，包含两种构建分支、实际 macOS 非 root CLI 失败、权限/格式/锁、原值比较、路由生效和令牌/账本保留 |
+| 两份 DEB | arm64 / arm64e，签名、布局、链接、脚本、载荷与版本检查通过 |
+| iPhone 16e 模拟器 | 未绑定入口、UDID 输入、错误反馈、绑定确认及服务未就绪提示通过 |
+
+主机测试只访问临时配置、合成 SQLite 数据和假重启记录。RootHide 的 macOS 路径 API 使用合成 shim，两份 iOS DEB 使用各自正式路径与官方 RootHide SDK 构建。主机正向配置测试模拟 root UID 并省略 root 文件所有权设置；另行编译未开启测试宏的 CLI，验证实际非 root 执行返回 JSON permission_denied 与退出码 1。真实 iOS root 权限与 App 进程路径校验待真机验收。
+
+本轮可见设备状态为 unavailable，1.14 的真机安装、App 注册、注入、三动作、SpringBoard 重启和 USB 中断恢复均待设备验证。真实 Keychain 清理需专用测试数据。[对接验收流程](integration.md)
+
+复跑本轮检查可使用以下命令。
+
+```sh
+python3 tests/run_host_tests.py
+python3 tests/test_keychain.py
+python3 tests/test_daemon.py
+python3 tests/test_http.py
+python3 tests/test_http.py --scheme roothide
+python3 tests/test_setup.py
+python3 scripts/build.py
+python3 tests/verify_packages.py
+python3 scripts/build.py --simulator
+```
+
 ## 1.13 本机检查
 
 2026-11-22（Asia/Shanghai）完成两个版本的构建和本机验证。

@@ -1,6 +1,7 @@
 #import "../common/MKSKeychain.h"
 #import "../common/MKSKeychainIPC.h"
 #import "MKSOperations.h"
+#import "MKSHTTPServer.h"
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/stat.h>
@@ -15,17 +16,22 @@ static BOOL authorized(int fd) {
     ProcessPath path=(ProcessPath)dlsym(RTLD_DEFAULT,"proc_pidpath");
     char process[4096]={0};
     if(!path || path(pid,process,sizeof(process))<=0) return NO;
-    return MKSKeychainPeerAllowed(uid,@(process),MKS_JB_NS_PATH("/Applications/MKS.app/MKS"));
+#ifdef MKS_HTTP_TEST
+    NSString *expected=@(getenv("MKS_TEST_APP_PATH"));
+#else
+    NSString *expected=MKS_JB_NS_PATH("/Applications/MKS.app/MKS");
+#endif
+    return MKSKeychainPeerAllowed(uid,@(process),expected);
 }
 static void serveClient(int fd) {
     struct timeval timeout={4,0};int yes=1;
     setsockopt(fd,SOL_SOCKET,SO_RCVTIMEO,&timeout,sizeof(timeout));
     setsockopt(fd,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout));
     setsockopt(fd,SOL_SOCKET,SO_NOSIGPIPE,&yes,sizeof(yes));
-    NSDictionary *result=@{@"ok":@NO,@"committed":@NO,@"stage":@"unauthorized"};
+    NSDictionary *result=@{@"ok":@NO,@"committed":@NO,@"stage":@"unauthorized",@"error":@"unauthorized",@"retryable":@NO};
     if(authorized(fd)) {
         NSMutableData *request=[NSMutableData new];char buffer[64];ssize_t n;BOOL complete=NO;
-        while(request.length<=64) {
+        while(request.length<=512) {
             n=read(fd,buffer,sizeof(buffer));
             if(n<0 && errno==EINTR) continue;
             if(n==0) { complete=YES;break; }
@@ -35,6 +41,15 @@ static void serveClient(int fd) {
         result=@{@"ok":@NO,@"committed":@NO,@"stage":@"invalid_request"};
         if(complete && MKSKeychainRequestValid(request)) {
             result=MKSPerformOperation(@"keychain/clean");
+        } else if(complete && [request isEqualToData:[@(MKS_LOCAL_STATUS_COMMAND) dataUsingEncoding:NSUTF8StringEncoding]]) {
+            result=MKSOperationStatus();
+        } else if(complete) {
+            NSDictionary *binding=MKSLocalSetupRequest(request);
+            if(binding) {
+                NSMutableDictionary *response=[MKSConfigureDeviceID(binding[@"deviceId"],binding[@"expectedDeviceId"]) mutableCopy];
+                if([response[@"ok"] boolValue]) response[@"status"]=MKSOperationStatus();
+                result=response;
+            }
         }
     }
     NSData *data=[NSJSONSerialization dataWithJSONObject:result options:0 error:NULL];
@@ -59,8 +74,12 @@ void MKSCleanerStartServer(void) {
             }
             int server=socket(AF_UNIX,SOCK_STREAM,0);
             if(server<0) return;
-            if(bind(server,(struct sockaddr *)&address,sizeof(address))!=0 ||
-                chown(socketPath,0,501)!=0 || chmod(socketPath,0660)!=0 || listen(server,4)!=0) {
+            if(bind(server,(struct sockaddr *)&address,sizeof(address))!=0) { close(server);return; }
+            BOOL permissionsOK=YES;
+#ifndef MKS_HTTP_TEST
+            permissionsOK=chown(socketPath,0,501)==0;
+#endif
+            if(!permissionsOK || chmod(socketPath,0660)!=0 || listen(server,4)!=0) {
                 close(server);return;
             }
             while(1) {

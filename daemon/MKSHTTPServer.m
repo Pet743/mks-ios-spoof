@@ -27,6 +27,7 @@ static ssize_t boundedRead(int fd,void *buffer,size_t size,CFAbsoluteTime until)
 @property(copy) NSString *path;
 @property(strong) NSMutableArray *jobs;
 @property(strong) dispatch_queue_t worker;
+@property BOOL storageFailed;
 - (instancetype)initWithDirectory:(NSString *)directory;
 - (NSDictionary *)submit:(NSString *)action key:(NSString *)key status:(int *)status start:(NSString **)start;
 - (void)start:(NSString *)jobID;
@@ -51,14 +52,18 @@ static ssize_t boundedRead(int fd,void *buffer,size_t size,CFAbsoluteTime until)
         if(data && ![loaded isKindOfClass:NSArray.class]) return nil;
         self.jobs=loaded?:[NSMutableArray new];
         if(self.jobs.count>100) return nil;
+        NSMutableSet *ids=[NSMutableSet new],*keys=[NSMutableSet new];
         for(NSMutableDictionary *job in self.jobs) {
             if(![job isKindOfClass:NSMutableDictionary.class] || ![job[@"jobId"] isKindOfClass:NSString.class] ||
                 ![job[@"key"] isKindOfClass:NSString.class] ||
                 ![@[@"spoof",@"restore",@"keychain/clean"] containsObject:job[@"action"]] ||
                 ![@[@"queued",@"running",@"succeeded",@"failed",@"interrupted"] containsObject:job[@"state"]]) return nil;
+            if(![job[@"jobId"] length] || ![job[@"key"] length] || [ids containsObject:job[@"jobId"]] || [keys containsObject:job[@"key"]]) return nil;
+            if([@[@"succeeded",@"failed",@"interrupted"] containsObject:job[@"state"]] && ![job[@"result"] isKindOfClass:NSDictionary.class]) return nil;
+            [ids addObject:job[@"jobId"]];[keys addObject:job[@"key"]];
             if([@[@"queued",@"running"] containsObject:job[@"state"]]) {
                 job[@"state"]=@"interrupted";
-                job[@"result"]=@{@"ok":@NO,@"outcomeUnknown":@YES,@"error":@"daemon_restarted"};
+                job[@"result"]=@{@"ok":@NO,@"outcomeUnknown":@YES,@"error":@"daemon_restarted",@"stage":@"recovery",@"retryable":@NO};
             }
         }
         if(![self save]) return nil;
@@ -80,6 +85,7 @@ static ssize_t boundedRead(int fd,void *buffer,size_t size,CFAbsoluteTime until)
             *status=[job[@"action"] isEqual:action]?202:409;
             return *status==202?[self publicJob:job]:@{@"error":@"idempotency_conflict"};
         }
+        if(self.storageFailed) { *status=503;return @{@"error":@"job_save_failed"}; }
         NSArray *previous=[self.jobs copy];
         if(self.jobs.count>=100) {
             NSUInteger index=[self.jobs indexOfObjectPassingTest:^BOOL(NSDictionary *job,NSUInteger idx,BOOL *stop) {
@@ -91,7 +97,7 @@ static ssize_t boundedRead(int fd,void *buffer,size_t size,CFAbsoluteTime until)
         NSMutableDictionary *job=[@{@"jobId":NSUUID.UUID.UUIDString,@"key":key,@"action":action,
             @"state":@"queued",@"createdAt":@([NSDate.date timeIntervalSince1970])} mutableCopy];
         [self.jobs addObject:job];
-        if(![self save]) { self.jobs=[previous mutableCopy];*status=503;return @{@"error":@"job_save_failed"}; }
+        if(![self save]) { self.storageFailed=YES;self.jobs=[previous mutableCopy];*status=503;return @{@"error":@"job_save_failed"}; }
         *status=202;*start=job[@"jobId"];return [self publicJob:job];
     }
 }
@@ -104,8 +110,16 @@ static ssize_t boundedRead(int fd,void *buffer,size_t size,CFAbsoluteTime until)
             @synchronized(self) {
                 for(NSMutableDictionary *job in self.jobs) if([job[@"jobId"] isEqual:jobID]) selected=job;
                 if(!selected || ![selected[@"state"] isEqual:@"queued"]) return;
+                if(self.storageFailed) {
+                    selected[@"state"]=@"interrupted";
+                    selected[@"result"]=@{@"ok":@NO,@"error":@"job_save_failed",@"stage":@"persistence",@"retryable":@NO,@"outcomeUnknown":@NO};
+                    return;
+                }
                 selected[@"state"]=@"running";
-                if(![self save]) { selected[@"state"]=@"failed";selected[@"result"]=@{@"ok":@NO,@"error":@"job_save_failed"};return; }
+                if(![self save]) {
+                    self.storageFailed=YES;selected[@"state"]=@"failed";
+                    selected[@"result"]=@{@"ok":@NO,@"error":@"job_save_failed",@"stage":@"persistence",@"retryable":@NO,@"outcomeUnknown":@NO};return;
+                }
             }
             NSDictionary *result=MKSPerformOperation(selected[@"action"]);
             @synchronized(self) {
@@ -113,8 +127,8 @@ static ssize_t boundedRead(int fd,void *buffer,size_t size,CFAbsoluteTime until)
                 selected[@"state"]=[result[@"ok"] boolValue]?@"succeeded":@"failed";
                 selected[@"finishedAt"]=@([NSDate.date timeIntervalSince1970]);
                 if(![self save]) {
-                    selected[@"state"]=@"interrupted";
-                    selected[@"result"]=@{@"ok":@NO,@"outcomeUnknown":@YES,@"error":@"result_save_failed"};
+                    self.storageFailed=YES;selected[@"state"]=@"interrupted";
+                    selected[@"result"]=@{@"ok":@NO,@"outcomeUnknown":@YES,@"error":@"result_save_failed",@"stage":@"persistence",@"retryable":@NO};
                 }
             }
         }
@@ -130,6 +144,18 @@ static BOOL equalToken(NSString *a,NSString *b) {
     return difference==0;
 }
 static void reply(int fd,int status,NSDictionary *body) {
+    if([body[@"error"] isKindOfClass:NSString.class]) {
+        NSMutableDictionary *error=[body mutableCopy];
+        NSString *code=body[@"error"];
+        BOOL setup=[code isEqual:@"device_id_not_configured"];
+        error[@"ok"]=@NO;
+        NSDictionary *stages=@{@"device_id_not_configured":@"device_setup",@"unauthorized":@"authentication",
+            @"job_save_failed":@"persistence",@"queue_full":@"queue",@"device_not_found":@"device_route"};
+        error[@"stage"]=stages[code] ?: @"request";
+        error[@"retryable"]=@([code isEqual:@"queue_full"]);
+        error[@"requiresLocalSetup"]=@(setup);error[@"outcomeUnknown"]=@NO;
+        body=error;
+    }
     NSData *data=[NSJSONSerialization dataWithJSONObject:body options:NSJSONWritingSortedKeys error:NULL];
     NSString *header=[NSString stringWithFormat:@"HTTP/1.1 %d %@\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: %lu\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n",status,status<400?@"OK":@"Error",(unsigned long)data.length];
     NSMutableData *response=[[header dataUsingEncoding:NSUTF8StringEncoding] mutableCopy];[response appendData:data];
@@ -216,7 +242,7 @@ static void serveHTTP(int fd,NSString *token,MKSHTTPJobs *jobs) {
     if(start) [jobs start:start];
 }
 int MKSHTTPListen(NSString *directory,NSString *token,uint16_t port,BOOL loopback) {
-    if(token.length<32) return -1;
+    if(token.length<32 || !MKSPrepareInstallation(directory)) return -1;
     MKSHTTPJobs *jobs=[[MKSHTTPJobs alloc] initWithDirectory:directory];if(!jobs) return -1;
     int server=socket(AF_INET,SOCK_STREAM,0);if(server<0) return -1;
     int yes=1;setsockopt(server,SOL_SOCKET,SO_REUSEADDR,&yes,sizeof(yes));
@@ -238,16 +264,6 @@ int MKSHTTPListen(NSString *directory,NSString *token,uint16_t port,BOOL loopbac
         });
     }
     close(server);return 0;
-}
-int MKSHTTPConfigureDeviceID(const char *deviceID) {
-    if(geteuid()!=0 || !deviceID) return 1;
-    NSString *value=[@(deviceID) uppercaseString];
-    NSString *pattern=@"^([0-9A-F]{8}-[0-9A-F]{16}|[0-9A-F]{40})$";
-    if([value rangeOfString:pattern options:NSRegularExpressionSearch].location==NSNotFound) return 2;
-    NSData *data=[value dataUsingEncoding:NSUTF8StringEncoding];
-    if(![data writeToFile:MKS_HTTP_DEVICE_PATH options:NSDataWritingAtomic error:NULL]) return 3;
-    if(chown(MKS_HTTP_DEVICE_PATH.fileSystemRepresentation,0,501)!=0 || chmod(MKS_HTTP_DEVICE_PATH.fileSystemRepresentation,0640)!=0) return 4;
-    return 0;
 }
 void MKSHTTPStartServer(void) {
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{

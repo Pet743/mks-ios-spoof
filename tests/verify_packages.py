@@ -83,6 +83,7 @@ def verify_package(scheme, architecture, prefix, ipa):
         binary = ROOT / '.build/ios' / scheme / local
         member, data = files[packaged]
         assert data == binary.read_bytes() and member.mode == 0o755
+        assert b'MKS_TEST_' not in data and b'MKSTestSQLiteExec' not in data
         assert member.uid == 0 and member.gid == 0
         archs = subprocess.check_output(['lipo', '-archs', str(binary)], text=True).split()
         assert archs == ['arm64', 'arm64e'], archs

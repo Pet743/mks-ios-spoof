@@ -55,6 +55,11 @@ static BOOL saveBackup(sqlite3 *source,NSString *databasePath,NSString *backupPa
         fd=open(backupPath.fileSystemRepresentation,O_RDONLY|O_NOFOLLOW);
         if(fd<0) ok=NO;
         else { ok=fsync(fd)==0;close(fd); }
+        if(ok) {
+            int directory=open(backupPath.stringByDeletingLastPathComponent.fileSystemRepresentation,O_RDONLY|O_DIRECTORY|O_NOFOLLOW);
+            if(directory<0) ok=NO;
+            else { ok=fsync(directory)==0;close(directory); }
+        }
     }
     if(!ok) unlink(backupPath.fileSystemRepresentation);
     return ok;
@@ -62,15 +67,17 @@ static BOOL saveBackup(sqlite3 *source,NSString *databasePath,NSString *backupPa
 NSDictionary *MKSKeychainClean(NSString *databasePath,NSString *backupDirectory) {
     @autoreleasepool {
         sqlite3 *db=NULL;
-        BOOL transaction=NO,committed=NO;
+        BOOL transaction=NO,committed=NO,outcomeUnknown=NO;
         NSString *stage=@"open",*backupPath=nil;
         NSMutableDictionary *deleted=[NSMutableDictionary new];
         struct stat st;
         if(lstat(databasePath.fileSystemRepresentation,&st)!=0 || !S_ISREG(st.st_mode))
-            return @{@"ok":@NO,@"committed":@NO,@"stage":@"database_missing"};
+            return @{@"ok":@NO,@"committed":@NO,@"stage":@"database_missing",@"error":@"database_missing",
+                @"retryable":@NO,@"outcomeUnknown":@NO,@"backupCreated":@NO,@"backupFormatVersion":@1};
         if(sqlite3_open_v2(databasePath.fileSystemRepresentation,&db,SQLITE_OPEN_READWRITE|SQLITE_OPEN_FULLMUTEX,NULL)!=SQLITE_OK) {
             if(db) sqlite3_close(db);
-            return @{@"ok":@NO,@"committed":@NO,@"stage":stage};
+            return @{@"ok":@NO,@"committed":@NO,@"stage":stage,@"error":@"database_open_failed",
+                @"retryable":@NO,@"outcomeUnknown":@NO,@"backupCreated":@NO,@"backupFormatVersion":@1};
         }
         sqlite3_busy_timeout(db,1500);
         CFAbsoluteTime end=CFAbsoluteTimeGetCurrent()+20;
@@ -114,16 +121,29 @@ NSDictionary *MKSKeychainClean(NSString *databasePath,NSString *backupDirectory)
             stage=@"verify";
             if(!integrity(db)) break;
             stage=@"commit";
-            if(!execSQL(db,"COMMIT")) break;
+            if(!execSQL(db,"COMMIT")) { outcomeUnknown=YES;break; }
             transaction=NO;committed=YES;stage=@"complete";
         } while(0);
         int code=committed?SQLITE_OK:sqlite3_extended_errcode(db);
-        if(transaction) { sqlite3_progress_handler(db,0,NULL,NULL);execSQL(db,"ROLLBACK"); }
+        if(transaction) {
+            sqlite3_progress_handler(db,0,NULL,NULL);
+            if(!sqlite3_get_autocommit(db) && !execSQL(db,"ROLLBACK")) outcomeUnknown=YES;
+        }
         int checkpoint=committed?sqlite3_wal_checkpoint_v2(db,NULL,SQLITE_CHECKPOINT_PASSIVE,NULL,NULL):SQLITE_OK;
         sqlite3_close(db);
         NSMutableDictionary *result=[@{@"ok":@(committed),@"committed":@(committed),@"stage":stage,
-            @"sqliteCode":@(code),@"deleted":committed?deleted:@{},@"checkpointCode":@(checkpoint)} mutableCopy];
-        if(backupPath) result[@"backup"]=backupPath;
+            @"sqliteCode":@(code),@"deleted":committed?deleted:@{},@"checkpointCode":@(checkpoint),
+            @"backupCreated":@(backupPath!=nil),@"backupFormatVersion":@1,
+            @"retryable":@(!outcomeUnknown && [stage isEqual:@"lock"]),@"outcomeUnknown":@(outcomeUnknown)} mutableCopy];
+        if(!committed) {
+            NSDictionary *errors=@{@"schema":@"database_schema_unsupported",@"lock":@"resource_busy",
+                @"backup":@"backup_failed",@"delete":@"cleanup_failed",@"verify":@"cleanup_verify_failed"};
+            result[@"error"]=outcomeUnknown?@"cleanup_outcome_unknown":(errors[stage] ?: @"cleanup_failed");
+        }
+        if(backupPath) {
+            result[@"backup"]=backupPath;
+            result[@"backupId"]=[backupPath.lastPathComponent stringByDeletingPathExtension];
+        }
         return result;
     }
 }

@@ -1,5 +1,6 @@
 #import <UIKit/UIKit.h>
 #import "../common/MKSProfile.h"
+#import "../common/MKSHTTP.h"
 #import "../common/MKSKeychainIPC.h"
 #import "MKSAPIDocsController.h"
 #include <arpa/inet.h>
@@ -88,6 +89,7 @@ static void do_respring(void) {
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
     self.status.text=[self currentState];self.text.text=[self currentParams];
+    self.navigationItem.leftBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:MKSHTTPDeviceID()?@"设备绑定":@"未绑定设备" style:UIBarButtonItemStylePlain target:self action:@selector(openAPIDocs)];
 }
 - (NSString *)configPath { return MKSConfigPath(); }
 - (NSDictionary *)currentProfile {

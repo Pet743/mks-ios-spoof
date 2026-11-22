@@ -19,8 +19,17 @@ static NSString *profilePath(void) {
 NSDictionary *MKSOperationStatus(void) {
     MKSProfileStore *store=[[MKSProfileStore alloc] initWithPaths:@[profilePath()]];
     NSDictionary *profile=[store snapshot];
-    return @{@"ok":@YES,@"version":@"1.13",@"enabled":@([profile[@"enabled"] boolValue]),
-        @"profileValid":@((BOOL)(profile!=nil)),@"deviceId":MKSHTTPDeviceID() ?: NSNull.null};
+    NSString *device=MKSHTTPDeviceID();
+#if defined(MKS_ROOTHIDE)
+    NSString *environment=@"roothide";
+#else
+    NSString *environment=@"rootless";
+#endif
+    return @{@"ok":@YES,@"apiVersion":@1,@"deviceConfigured":@(device!=nil),
+        @"environment":@{@"jailbreak":environment,@"layoutVersion":@1},
+        @"capabilities":@{@"spoof":@YES,@"restore":@YES,@"keychainClean":@YES},
+        @"installationId":MKSHTTPInstallationID() ?: NSNull.null,@"version":@"1.14",@"enabled":@([profile[@"enabled"] boolValue]),
+        @"profileValid":@((BOOL)(profile!=nil)),@"deviceId":device ?: NSNull.null};
 }
 NSDictionary *MKSPerformOperation(NSString *action) {
     [operationLock() lock];
@@ -36,14 +45,15 @@ NSDictionary *MKSPerformOperation(NSString *action) {
         NSDictionary *profile=[action isEqual:@"spoof"]?MKSGenerateProfile():
             @{@"schemaVersion":@2,@"enabled":@NO,@"name":@"已停用",@"values":@{}};
         NSError *error=nil;
-        if(!MKSWriteProfile(profile,profilePath(),&error)) return @{@"ok":@NO,@"profileSaved":@NO,@"error":@"profile_save_failed"};
+        if(!MKSWriteProfile(profile,profilePath(),&error)) return @{@"ok":@NO,@"profileSaved":@NO,@"error":@"profile_save_failed",@"stage":@"profile_save",@"retryable":@NO,@"outcomeUnknown":@NO};
         // Atomic writes by the root daemon must remain writable by the mobile UI.
 #ifndef MKS_HTTP_TEST
-        if(chown(profilePath().fileSystemRepresentation,501,501)!=0) return @{@"ok":@NO,@"profileSaved":@YES,@"error":@"profile_owner_failed"};
+        if(chown(profilePath().fileSystemRepresentation,501,501)!=0) return @{@"ok":@NO,@"profileSaved":@YES,@"error":@"profile_owner_failed",@"stage":@"profile_owner",@"retryable":@NO,@"outcomeUnknown":@NO};
         CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),CFSTR("com.mks.spoof.changed"),NULL,NULL,true);
 #endif
         BOOL restarted=MKSRespring()==0;
         return @{@"ok":@(restarted),@"profileSaved":@YES,@"enabled":profile[@"enabled"],
-            @"respringCommandSucceeded":@(restarted),@"error":restarted?NSNull.null:@"respring_failed"};
+            @"respringCommandSucceeded":@(restarted),@"error":restarted?NSNull.null:@"respring_failed",
+            @"stage":restarted?@"complete":@"respring",@"retryable":@NO,@"outcomeUnknown":@NO};
     } @finally { [operationLock() unlock]; }
 }

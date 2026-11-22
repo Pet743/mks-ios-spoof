@@ -27,15 +27,18 @@ def rows(db,table):return db.execute(f'SELECT * FROM {table} ORDER BY id').fetch
 
 def main():
     BINARY.parent.mkdir(parents=True,exist_ok=True)
+    object_file=BINARY.parent/'cleaner.o'
+    subprocess.run(['xcrun','clang','-fobjc-arc','-Wall','-Wextra','-Werror','-Dsqlite3_exec=MKSTestSQLiteExec',
+        '-c',str(ROOT/'common/MKSKeychain.m'),'-o',str(object_file)],check=True)
     subprocess.run(['xcrun','clang','-fobjc-arc','-Wall','-Wextra','-Werror',str(ROOT/'tests/keychain_host.m'),
-        str(ROOT/'common/MKSKeychain.m'),str(ROOT/'common/MKSKeychainIPC.m'),'-framework','Foundation','-lsqlite3','-o',str(BINARY)],check=True)
+        str(object_file),str(ROOT/'tests/sqlite_faults.c'),str(ROOT/'common/MKSKeychainIPC.m'),'-framework','Foundation','-lsqlite3','-o',str(BINARY)],check=True)
     checks=0
     def check(condition):
         nonlocal checks
         assert condition
         checks+=1
-    def clean(path,backup):
-        p=subprocess.run([str(BINARY),str(path),str(backup)],capture_output=True,text=True,timeout=30)
+    def clean(path,backup,environment=None):
+        p=subprocess.run([str(BINARY),str(path),str(backup)],capture_output=True,text=True,timeout=30,env=environment)
         result=json.loads(p.stdout)
         check(p.returncode==(0 if result['ok'] else 1))
         return result
@@ -47,6 +50,8 @@ def main():
             before={table:rows(db,table) for table in ['genp','cert','keys','inet']}
             result=clean(path,case/'backup')
             check(result['ok'] and result['committed'])
+            check(result['backupCreated'] and result['backupFormatVersion']==1)
+            check(result['backupId']==Path(result['backup']).stem and not result['outcomeUnknown'])
             check(result['deleted']=={'genp':2,'cert':2,'keys':2,'inet':4})
             check([r[1] for r in rows(db,'genp')]==['apple',None])
             for table in ['cert','keys']:check([r[1] for r in rows(db,table)]==['lockdown-identities',None])
@@ -86,6 +91,13 @@ def main():
         check(not result['committed'] and result['stage']=='delete' and result['deleted']=={})
         for table in before:check(rows(db,table)==before[table])
         check(Path(result['backup']).exists());db.close()
+        case=root/'commit-unknown';case.mkdir();path=case/'fixture.sqlite';db=fixture(path)
+        before={table:rows(db,table) for table in ['genp','cert','keys','inet']}
+        result=clean(path,case/'backup',dict(os.environ,MKS_TEST_COMMIT_FAILURE='1'))
+        check(not result['committed'] and result['outcomeUnknown'] and not result['retryable'])
+        check(result['error']=='cleanup_outcome_unknown' and result['backupCreated'])
+        for table in before:check(rows(db,table)==before[table])
+        db.close()
         case=root/'locked';case.mkdir();path=case/'fixture.sqlite';db=fixture(path)
         db.execute('BEGIN IMMEDIATE')
         result=clean(path,case/'backup');check(result['stage']=='lock' and not result['committed'])
@@ -93,6 +105,7 @@ def main():
         case=root/'insecure-backup';case.mkdir();path=case/'fixture.sqlite';db=fixture(path)
         (case/'backup').mkdir(mode=0o755)
         result=clean(path,case/'backup');check(result['stage']=='backup' and not result['committed'])
+        check(result['error']=='backup_failed' and not result['backupCreated'] and not result['outcomeUnknown'])
         check(len(rows(db,'genp'))==4);db.close()
         case=root/'unsupported';case.mkdir();path=case/'fixture.sqlite';db=sqlite3.connect(path)
         db.execute('CREATE TABLE genp(id INTEGER)');db.commit();db.close()

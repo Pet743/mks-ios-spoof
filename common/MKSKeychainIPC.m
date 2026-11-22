@@ -16,7 +16,7 @@ BOOL MKSKeychainPeerAllowed(uid_t uid,NSString *processPath,NSString *appPath) {
     if(!realpath(processPath.fileSystemRepresentation,peer) || !realpath(appPath.fileSystemRepresentation,expected)) return NO;
     return !strcmp(peer,expected);
 }
-NSDictionary *MKSRequestKeychainClean(void) {
+static NSDictionary *localRequest(NSData *request) {
 #if TARGET_OS_SIMULATOR
     return @{@"ok":@NO,@"committed":@NO,@"stage":@"simulator"};
 #else
@@ -33,15 +33,14 @@ NSDictionary *MKSRequestKeychainClean(void) {
     }
     NSDictionary *result=nil;BOOL requested=NO;
     if(connect(fd,(struct sockaddr *)&address,sizeof(address))==0) {
-        const char command[]=MKS_KEYCHAIN_COMMAND;
         size_t sent=0;
-        while(sent<sizeof(command)-1) {
-            ssize_t n=write(fd,command+sent,sizeof(command)-1-sent);
+        while(sent<request.length) {
+            ssize_t n=write(fd,(const uint8_t *)request.bytes+sent,request.length-sent);
             if(n<0 && errno==EINTR) continue;
             if(n<=0) break;
             sent+=(size_t)n;
         }
-        requested=sent==sizeof(command)-1;
+        requested=sent==request.length;
         shutdown(fd,SHUT_WR);
         NSMutableData *response=[NSMutableData new];
         char buffer[1024];ssize_t n;
@@ -62,4 +61,23 @@ NSDictionary *MKSRequestKeychainClean(void) {
     // Do not retry automatically: a lost response may follow a committed delete.
     return result ?: @{@"ok":@NO,@"committed":@NO,@"outcomeUnknown":@(requested),@"stage":@"connection"};
 #endif
+}
+
+NSDictionary *MKSLocalSetupRequest(NSData *request) {
+    if(request.length>512) return nil;
+    id body=[NSJSONSerialization JSONObjectWithData:request options:0 error:NULL];
+    if(![body isKindOfClass:NSDictionary.class] || [body count]!=3 ||
+        ![body[@"action"] isEqual:@"bindDevice"] || ![body[@"deviceId"] isKindOfClass:NSString.class] ||
+        !([body[@"expectedDeviceId"] isKindOfClass:NSString.class] || body[@"expectedDeviceId"]==NSNull.null)) return nil;
+    return body;
+}
+NSDictionary *MKSRequestKeychainClean(void) {
+    return localRequest([@(MKS_KEYCHAIN_COMMAND) dataUsingEncoding:NSUTF8StringEncoding]);
+}
+NSDictionary *MKSRequestLocalStatus(void) {
+    return localRequest([@(MKS_LOCAL_STATUS_COMMAND) dataUsingEncoding:NSUTF8StringEncoding]);
+}
+NSDictionary *MKSRequestDeviceBinding(NSString *deviceID,id expectedDeviceID) {
+    NSDictionary *body=@{@"action":@"bindDevice",@"deviceId":deviceID,@"expectedDeviceId":expectedDeviceID ?: NSNull.null};
+    return localRequest([NSJSONSerialization dataWithJSONObject:body options:0 error:NULL]);
 }

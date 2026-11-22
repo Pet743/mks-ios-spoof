@@ -1,11 +1,11 @@
 # MKS 改机
 
-自用 iOS 越狱工具，当前版本 **1.13**，提供 Rootless 和 RootHide 两个安装包。提供一键改机、恢复原机、全局 Keychain 清理，以及同一 Wi-Fi 内的 HTTP 调用。无卡密、激活或远程授权。
+自用 iOS 越狱工具，当前版本 **1.14**，提供 Rootless 和 RootHide 两个安装包。提供一键改机、恢复原机、全局 Keychain 清理，以及同一 Wi-Fi 内的 HTTP 调用。无卡密、激活或远程授权。
 
 | 越狱环境 | DEB 架构 | 下载 |
 | --- | --- | --- |
-| Rootless（固定 `/var/jb`） | `iphoneos-arm64` | [Rootless DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.13/mks_1.13_rootless_iphoneos-arm64.deb) |
-| RootHide（RootHide bootstrap + ElleKit） | `iphoneos-arm64e` | [RootHide DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.13/mks_1.13_roothide_iphoneos-arm64e.deb) |
+| Rootless（固定 `/var/jb`） | `iphoneos-arm64` | [Rootless DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.14/mks_1.14_rootless_iphoneos-arm64.deb) |
+| RootHide（RootHide bootstrap + ElleKit） | `iphoneos-arm64e` | [RootHide DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.14/mks_1.14_roothide_iphoneos-arm64e.deb) |
 
 ## 使用
 
@@ -18,8 +18,13 @@
 
 HTTP 默认端口 `33237`，路径前缀 `/v1/devices/{USB_UDID}`。改机不会修改 HTTP 服务单独保存的设备编号。Bearer token 用于授权，UDID 用于路由。操作返回任务编号，查询任务确认完成；带 Idempotency-Key 的重复请求不会重复改机或清理。
 
+## 1.14 对接改进
+
+App 的「未绑定设备 / 设备绑定」和「接口文档」可进入 USB UDID 绑定流程，重绑定会显示原值并再次确认。CLI 返回 JSON 与退出码。状态接口增量提供环境、能力和安装标识；清理回执提供稳定备份标识，故障响应增加重试及结果未知标记。v1 路由与 Bearer 认证沿用现有协议。
+
 ## 文档
 
+- [核销系统首次对接与恢复流程](docs/integration.md)
 - [HTTP API、curl 与 Python 示例](docs/http-api.md)
 - [安装、设备编号配置与升级](docs/install.md)
 - [全局 Keychain 规则及 REA/Craft Anything 分析](docs/keychain-cleaner.md)
@@ -36,6 +41,8 @@ python3 tests/run_host_tests.py
 python3 tests/test_keychain.py
 python3 tests/test_daemon.py
 python3 tests/test_http.py
+python3 tests/test_http.py --scheme roothide
+python3 tests/test_setup.py
 python3 scripts/build.py
 python3 tests/verify_packages.py
 ```
@@ -44,9 +51,9 @@ python3 tests/verify_packages.py
 
 用 `--scheme rootless` 或 `--scheme roothide` 可单独构建及校验某个包。用 `python3 scripts/build.py --scheme rootless --ipa` 可另外构建不含 daemon 的独立 IPA。用 `python3 scripts/build.py --simulator` 可生成模拟器 App。
 
-## 1.13 验证状态
+## 1.14 验证状态
 
-两个 DEB 均通过主机构建、签名、包布局、载荷、Mach-O 链接和安装脚本语法检查。1.13 的真机安装与注入待验证。历史真机结果及本版检查见[验证记录](docs/validation.md)。
+两个 DEB 均通过主机构建、签名、包布局、载荷、Mach-O 链接和安装脚本语法检查；两种分支的 CLI、App IPC、HTTP 与故障回归通过，模拟器验证绑定交互。1.14 的真机安装与注入待验证。历史真机结果及本版检查见[验证记录](docs/validation.md)。
 
 ## 1.12 修复
 
