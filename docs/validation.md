@@ -1,5 +1,43 @@
 # MKS 验证摘要
 
+## 1.15 主机回归与 RootHide 升级
+
+2026-11-23（Asia/Shanghai）同步参数规则改动，完成两种 DEB 构建、检查及 USB 连接的 RootHide iPhone 覆盖升级。原事件的实际登录请求仍待复现；本次增加六进程主动 API 采样，不将其标记为新 hook 修复。
+
+| 检查 | 本版结果 |
+| --- | --- |
+| 改机核心 | 1094 项通过；新增生成规则、14 段导出回读与错误字段；保留配置、hook、类型、并发和恢复回归 |
+| Keychain 合成数据 | 77 项通过；真实 Keychain 未执行删除 |
+| UDP daemon | 9 项通过 |
+| HTTP Rootless / RootHide | 各 61 项通过，版本断言为 1.15 |
+| CLI / App IPC / HTTP 绑定 | 69 项通过，两种环境均覆盖 |
+| 两份 DEB | 三个程序各含 arm64 / arm64e；签名、布局、载荷、链接和脚本检查通过 |
+| RootHide 真机安装 | dpkg 从 1.14.1 升级到 1.15，App 1.15 / 116；四份安装文件核对通过 |
+| 桌面与接口 | SpringBoard PID 更换；daemon PID 保持；重启后三次 HTTP 状态查询均为 1.15 |
+| 注入加载 | 采集到新版 SpringBoard 的 MKS 1.15 构造日志；不等于 Apple 登录进程属性验收 |
+| App | Instruments 启动后前台为 com.mks.spoofer，截图确认主界面和配置停用状态 |
+
+升级前后主配置、token、device-id、installation-id 的 SHA-256 完全一致；jobs.json 在 daemon 启动时重新序列化，字节哈希改变，但解析后的 12 条任务及每个字段完全相同。升级保留原来的 `enabled:false` 和有效配置；本轮没有重新生成日常参数。临时传输 DEB 已移除，设备上的升级前状态备份保留。
+
+App、Info.plist、注入库与包内载荷逐字节匹配。daemon 的差异经校验仅为 RootHide arm64e 的 __TEXT 节标记及对应代码页签名哈希，安装后签名验证通过。
+
+基线 1.14.1 独立副本通过 389 项核心回归和两种 HTTP 分支各 61 项检查。1.15 的完整补丁另在独立副本逆向应用并复核，恢复 1.14.1 文件与回归结果；主工作目录和手机保持 1.15。完整命令、原始输出及哈希保存在本地诊断记录。
+
+上述主机测试使用临时配置、合成 SQLite 数据和假重启。真机完成安装、状态保留、桌面重启和 App 打开后，另执行两轮改机/恢复与六进程主动 API 采样。未执行真实 Keychain 删除、Apple 登录或 Rootless 真机验收。[事件结论与复核流程](login-incident.md)。
+
+安装包 SHA-256：
+
+- `mks_1.15_roothide_iphoneos-arm64e.deb`：`81a79dc412781b4f55688b2538d664158609657dfcbc64563a325c972c7b45d1`
+- `mks_1.15_rootless_iphoneos-arm64.deb`：`9a59c5927ef8cf8f9a3e609b16fa7dd5f9202615fe360c0064d42b410be0a0f5`
+
+## 1.15 RootHide 六进程诊断
+
+升级后进一步采样 AppStore、akd、accountsd、amsaccountsd、appstored、itunesstored。每进程 55 个读取点：合计 218 项匹配配置、24 项与基线相同的原生缺失、88 项 passthrough；0 项非空替换值不匹配。恢复后 330 项 SHA-256 读数摘要与停用基线一致。各项缺失和 passthrough 不计为替换通过，IOKit 原生空值不构成正向替换证据。
+
+正式测试先刷新目标进程，再通过正常注入路径加载临时只读探针。五个 daemon 在各轮基线、启用和恢复期间保持 PID；AppStore 在桌面重启后重新打开。主动探针调用不等于 Apple 登录业务的实际属性调用，更不证明账户锁定原因。
+
+两轮共生成四条新诊断任务，原有 12 条任务逐字段保留。测试后恢复原配置字节、enabled:false、授权和绑定；临时探针及传输文件已移除、采样进程已刷新，MKS 已打开。诊断构建入口另验证 RootHide、Rootless 两种双架构签名产物，未将探针加入发行 DEB。[逐进程表与复跑方法](login-incident.md)。
+
 ## 1.14.1 安装验收
 
 2026-11-22 在 USB 连接的 RootHide iPhone 上完成 1.13 → 1.14 → 1.14.1 覆盖升级。1.14 真机暴露新增布尔字段被序列化为数字的问题，1.14.1 已显式转换为 BOOL。主机 HTTP 两种分支各 61 项、合成 Keychain 77 项及两份包校验通过。

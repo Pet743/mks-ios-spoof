@@ -99,8 +99,31 @@ int main(int argc,char **argv) {
         for(int i=0;i<100;i++) {
             NSDictionary *p=MKSGenerateProfile();
             CHECK(MKSParseProfile(MKSEncodeProfile(p,NULL),NULL)!=nil,"generated validation");
-            CHECK([p[@"values"][@"ProductVersion"] isEqual:@"16.3.1"] && [p[@"values"][@"BuildVersion"] isEqual:@"20D67"],"version-build pair");
+            NSDictionary *v=p[@"values"];
+            CHECK(MKSProfileHTMLRuleErrors(p).count==0,"generated profile passes HTML certificate rules");
+            CHECK(MKSParseLegacy(MKSProfileHTMLParameters(p),NULL)!=nil,"HTML export round trips through legacy parser");
+            CHECK([v[@"ProductType"] isEqual:@"iPhone16,2"],"HTML default model mapping");
+            CHECK([v[@"SerialNumber"] isEqual:v[@"MLBSerialNumber"]],"HTML repeated serial fields");
+            CHECK([v[@"InternationalMobileEquipmentIdentity2"] isEqual:[v[@"InternationalMobileEquipmentIdentity"] substringToIndex:14]],"HTML IMEI2 prefix");
+            CHECK([[v[@"HardwarePlatform"] uppercaseString] isEqual:[@"T" stringByAppendingString:[v[@"ChipID"] substringFromIndex:2]]],"HTML chip mapping");
+            CHECK([v[@"RegionInfo"] isEqual:@"LL/A"] && [v[@"RegionCode"] isEqual:@"LL"],"HTML default region mapping");
+            CHECK(v[@"MobileEquipmentIdentifier"]==nil,"HTML parameter set does not add a MEID field");
         }
+        NSMutableDictionary *badHTML=[MKSGenerateProfile() mutableCopy];
+        NSMutableDictionary *badValues=[badHTML[@"values"] mutableCopy];
+        badValues[@"HardwarePlatform"]=@"t9398";badValues[@"ChipID"]=@"0x9398";badHTML[@"values"]=badValues;
+        CHECK([MKSProfileHTMLRuleErrors(badHTML) containsObject:@"chip_format"],"HTML rejects T9 chip output");
+        badHTML=[MKSGenerateProfile() mutableCopy];badValues=[badHTML[@"values"] mutableCopy];
+        badValues[@"MLBSerialNumber"]=@"DIFFERENT123";badHTML[@"values"]=badValues;
+        CHECK([MKSProfileHTMLRuleErrors(badHTML) containsObject:@"serial_repeat"],"HTML repeated serial rule");
+        badHTML=[MKSGenerateProfile() mutableCopy];badValues=[badHTML[@"values"] mutableCopy];
+        badValues[@"ProductType"]=@"iPhone14,7";badHTML[@"values"]=badValues;
+        CHECK([MKSProfileHTMLRuleErrors(badHTML) containsObject:@"product_type"],"HTML model list");
+        badHTML=[MKSGenerateProfile() mutableCopy];badValues=[badHTML[@"values"] mutableCopy];
+        badValues[@"HWModelStr"]=@"D73AP";badHTML[@"values"]=badValues;
+        CHECK(![MKSProfileHTMLRuleErrors(badHTML) containsObject:@"board_format"],"HTML accepts any two-digit board");
+        badValues[@"HWModelStr"]=@"D7AP";
+        CHECK([MKSProfileHTMLRuleErrors(badHTML) containsObject:@"board_format"],"HTML board format");
         NSString *dir=@(argv[2]);[NSFileManager.defaultManager createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:NULL];
         NSString *path=[dir stringByAppendingPathComponent:@"active.json"], *fallback=[dir stringByAppendingPathComponent:@"fallback.json"];
         [NSFileManager.defaultManager removeItemAtPath:path error:NULL];[NSFileManager.defaultManager removeItemAtPath:fallback error:NULL];

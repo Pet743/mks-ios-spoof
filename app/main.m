@@ -103,7 +103,11 @@ static void do_respring(void) {
     NSDictionary *p=[self currentProfile];
     if(![p[@"enabled"] boolValue]) return @"（未启用参数）";
     NSData *data=[NSJSONSerialization dataWithJSONObject:p[@"values"] options:NSJSONWritingPrettyPrinted|NSJSONWritingSortedKeys error:NULL];
-    return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @"（参数读取失败）";
+    NSString *json=[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @"（参数读取失败）";
+    NSArray<NSString *> *errors=MKSProfileHTMLRuleErrors(p);
+    NSString *result=errors.count?[@"未通过：" stringByAppendingString:[errors componentsJoinedByString:@"、"]]:@"认证通过";
+    return [NSString stringWithFormat:@"HTML 参数规则：%@\n%@\n\n%@",result,
+        MKSProfileHTMLParameters(p) ?: @"（参数格式错误）",json];
 }
 - (BOOL)writeConfig:(NSDictionary *)profile {
     NSError *error=nil;
@@ -118,7 +122,15 @@ static void do_respring(void) {
     return YES;
 }
 - (void)doSpoof {
-    if(![self writeConfig:MKSGenerateProfile()]) return;
+    NSDictionary *profile=MKSGenerateProfile();
+    NSArray<NSString *> *errors=MKSProfileHTMLRuleErrors(profile);
+    if(errors.count) {
+        UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"参数未通过 HTML 规则"
+            message:[errors componentsJoinedByString:@"、"] preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];return;
+    }
+    if(![self writeConfig:profile]) return;
     [self restartAfterSave];
 }
 - (void)doRestore {

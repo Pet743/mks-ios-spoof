@@ -142,21 +142,70 @@ static NSString *mac(void) {
     return [bytes componentsJoinedByString:@":"];
 }
 NSDictionary *MKSGenerateProfile(void) {
-    // Keep a real model/board/SoC and OS/build pair; random identifiers remain local test data.
-    NSArray *devices=@[@[@"iPhone14,7",@"D27AP",@"t8110",@"0x8110"],@[@"iPhone15,2",@"D73AP",@"t8120",@"0x8120"]];
-    NSArray *d=devices[arc4random_uniform((uint32_t)devices.count)];
+    // Keep generated profiles inside the exact local HTML certificate rules.
+    NSString *product=@"iPhone16,2"; // HTML default selection: iPhone 15 Pro Max.
     NSString *body=pick(@"0123456789",14), *imei=nil;
     for(int i=0;i<10;i++) { NSString *s=[body stringByAppendingFormat:@"%d",i]; if(luhn(s)) { imei=s; break; } }
     NSString *sn=pick(@"ABCDEFGHJKLMNPQRSTUVWXYZ123456789",10), *wifi=mac();
     NSString *ecid=[@"0x" stringByAppendingString:pick(@"0123456789ABCDEF",16)];
+    NSString *chip=[NSString stringWithFormat:@"T%u",7000+arc4random_uniform(2000)];
+    NSString *board=[NSString stringWithFormat:@"D%uAP",80+arc4random_uniform(10)];
+    NSString *part=[NSString stringWithFormat:@"M%@%@%C%@LL/A",pick(@"ABCDEFGHJKLMNPQRSTUVWXYZ",1),
+        pick(@"ABCDEFGHJKLMNPQRSTUVWXYZ",1),(unichar)('0'+arc4random_uniform(10)),pick(@"ABCDEFGHJKLMNPQRSTUVWXYZ",1)];
+    NSString *build=[NSString stringWithFormat:@"%u%C%02u",20+arc4random_uniform(3),
+        [@"ABCDEFGHJKLMNPQRSTUVWXYZ" characterAtIndex:arc4random_uniform(24)],10+arc4random_uniform(90)];
+    NSString *version=[NSString stringWithFormat:@"%u.%u.%u",16+arc4random_uniform(3),
+        arc4random_uniform(10),arc4random_uniform(10)];
     return @{@"schemaVersion":@2,@"enabled":@YES,@"name":[@"随机参数 " stringByAppendingString:sn],@"values":@{
-        @"SerialNumber":sn,@"MLBSerialNumber":pick(@"ABCDEFGHJKLMNPQRSTUVWXYZ123456789",17),
+        @"SerialNumber":sn,@"MLBSerialNumber":sn,
         @"InternationalMobileEquipmentIdentity":imei ?: @"000000000000000",@"InternationalMobileEquipmentIdentity2":body,
-        @"MobileEquipmentIdentifier":pick(@"0123456789ABCDEF",14),
         @"WifiAddress":wifi,@"EthernetMacAddress":wifi,@"BluetoothAddress":mac(),@"UniqueChipID":ecid,@"DieId":ecid,
-        @"UniqueDeviceID":pick(@"0123456789abcdef",40),@"ProductType":d[0],@"HWModelStr":d[1],@"HardwarePlatform":d[2],@"ChipID":d[3],
-        @"ModelNumber":[NSString stringWithFormat:@"M%@LL/A",pick(@"ABCDEFGHJKLMNPQRSTUVWXYZ123456789",4)],
-        @"RegionInfo":@"LL/A",@"RegionCode":@"LL",@"ProductVersion":@"16.3.1",@"BuildVersion":@"20D67"}};
+        @"UniqueDeviceID":pick(@"0123456789abcdef",40),@"ProductType":product,@"HWModelStr":board,
+        @"HardwarePlatform":chip,@"ChipID":[@"0x" stringByAppendingString:[chip substringFromIndex:1]],
+        @"ModelNumber":part,@"RegionInfo":@"LL/A",@"RegionCode":@"LL",
+        @"ProductVersion":version,@"BuildVersion":build}};
+}
+NSString *MKSProfileHTMLParameters(NSDictionary *profile) {
+    NSDictionary *values=profile[@"values"];
+    if(![values isKindOfClass:NSDictionary.class]) return nil;
+    NSString *ecid=values[@"UniqueChipID"];
+    if([ecid hasPrefix:@"0x"] || [ecid hasPrefix:@"0X"]) ecid=[ecid substringFromIndex:2];
+    NSArray *fields=@[values[@"SerialNumber"] ?: @"",
+        values[@"InternationalMobileEquipmentIdentity"] ?: @"",
+        values[@"InternationalMobileEquipmentIdentity2"] ?: @"",
+        values[@"WifiAddress"] ?: @"",values[@"BluetoothAddress"] ?: @"",ecid ?: @"",
+        values[@"UniqueDeviceID"] ?: @"",values[@"MLBSerialNumber"] ?: @"",
+        values[@"ProductType"] ?: @"",values[@"ModelNumber"] ?: @"",values[@"HWModelStr"] ?: @"",
+        [values[@"HardwarePlatform"] uppercaseString] ?: @"",values[@"BuildVersion"] ?: @"",
+        values[@"ProductVersion"] ?: @""];
+    return [fields componentsJoinedByString:@"----"];
+}
+NSArray<NSString *> *MKSProfileHTMLRuleErrors(NSDictionary *profile) {
+    NSMutableArray<NSString *> *errors=[NSMutableArray new];
+    NSString *line=MKSProfileHTMLParameters(profile);
+    NSArray<NSString *> *fields=[line componentsSeparatedByString:@"----"];
+    if(fields.count!=14) return @[@"field_count"];
+    NSString *serial=fields[0],*imei=fields[1],*imei2=fields[2],*ecid=fields[5],*udid=fields[6];
+    NSString *product=fields[8],*part=fields[9],*board=fields[10],*chip=fields[11],*build=fields[12],*version=fields[13];
+    NSSet *products=[NSSet setWithArray:@[@"iPhone15,2",@"iPhone15,3",@"iPhone16,1",@"iPhone16,2",@"iPhone17,1",@"iPhone17,2"]];
+    if(![serial isEqual:fields[7]]) [errors addObject:@"serial_repeat"];
+    if(!matches(serial,@"^[A-HJ-KL-MN-Z1-9]{10}$")) [errors addObject:@"serial_format"];
+    if(!matches(imei,@"^[0-9]{15}$") || !luhn(imei) || imei2.length!=14 ||
+        ![imei2 isEqual:[imei substringToIndex:MIN(14,imei.length)]]) [errors addObject:@"imei_format"];
+    if(!matches(fields[3],@"^[0-9a-f]{2}(:[0-9a-f]{2}){5}$") ||
+        !matches(fields[4],@"^[0-9a-f]{2}(:[0-9a-f]{2}){5}$")) [errors addObject:@"mac_format"];
+    if(!matches(ecid,@"^[0-9A-F]{16}$")) [errors addObject:@"ecid_format"];
+    if(!matches(udid,@"^[0-9a-f]{40}$")) [errors addObject:@"udid_format"];
+    if(![products containsObject:product]) [errors addObject:@"product_type"];
+    NSString *region=profile[@"values"][@"RegionCode"] ?: @"LL";
+    NSDictionary *suffix=@{@"US":@"LL/A",@"LL":@"LL/A",@"CA":@"CL/A",@"CL":@"CL/A",
+        @"DE":@"DN/A",@"DN":@"DN/A",@"CN":@"CH/A",@"CH":@"CH/A",@"HK":@"ZP/A",@"ZP":@"ZP/A"};
+    if(![part hasSuffix:suffix[region] ?: @"LL/A"]) [errors addObject:@"region_suffix"];
+    if(!matches(board,@"^D[0-9]{2}AP$")) [errors addObject:@"board_format"];
+    if(!matches(chip,@"^T[7-8][0-9]{3}$")) [errors addObject:@"chip_format"];
+    if(!matches(build,@"^[0-9]{2}[A-Z][0-9]{2,3}$")) [errors addObject:@"build_format"];
+    if(!matches(version,@"^(16|17|18)\\.[0-9]+(\\.[0-9]+)?$")) [errors addObject:@"ios_version"];
+    return errors;
 }
 id MKSMGValue(NSDictionary *p, NSString *key) {
     if (![p[@"enabled"] boolValue]) return nil;

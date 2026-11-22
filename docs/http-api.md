@@ -1,4 +1,4 @@
-# MKS 1.14.1 HTTP API · v1
+# MKS 1.15 HTTP API · v1
 
 MKS 通过独立的 root daemon 提供 HTTP 服务。在 1.12 已验证的 Rootless 设备上，强制关闭 MKS App、重启桌面后仍可调用；前提是 daemon 仍运行、越狱环境有效，且调用端能连接手机网络。App 右上角「接口文档」展示当前 Wi‑Fi 地址、设备编号、访问令牌与完整示例，右上角「复制」可复制文档。
 
@@ -7,6 +7,12 @@ MKS 通过独立的 root daemon 提供 HTTP 服务。在 1.12 已验证的 Rootl
 这里的「重启桌面」仅指 SpringBoard 重启，不是整机重启。整机重启、退出越狱、daemon 被停止或网络断开时，不保证接口可用；本轮未测试整机重启后的服务恢复。
 
 1.14 增加本地首次绑定、状态描述和备份标识。v1 路由、原状态字段、Bearer 认证、USB UDID 路由、幂等 Key/job 与清理提交语义继续兼容。上述 1.11 / 1.12 真机记录属于历史验收。1.14 本轮的验证范围见文末。
+
+## 1.15 参数校验
+
+`spoof` 保存前新增本地 HTML 参数规则检查；失败返回 job 终态 `failed`，结果包含 `error:profile_html_validation_failed`、`stage:profile_validate`、`profileSaved:false`、`retryable:false`、`outcomeUnknown:false`，不写入新配置，不调用桌面重启。HTTP v1 路由、Bearer、幂等和其他动作保持兼容。既有 `profileValid` 仍表示配置解析有效，不代表 HTML 规则或进程注入验证。
+
+App 的 HTML 规则结果不代表 Apple 认证；本轮已补充六进程的主动 API 采样，实际 Apple 登录请求仍未捕获。[参数规则](profile-rules.md) · [事件第 2 项结论](login-incident.md)。
 
 ## 连接与设备标识
 
@@ -103,7 +109,7 @@ curl -H "Authorization: Bearer $MKS_TOKEN" "$MKS_BASE/jobs/JOB_ID"
 ```json
 {
   "ok":true,
-  "version":"1.14.1",
+  "version":"1.15",
   "apiVersion":1,
   "deviceId":"00000000-0000000000000000",
   "deviceConfigured":true,
@@ -226,6 +232,7 @@ else:
 | `job_save_failed` | persistence | false / false | 检查存储，核对原 job，修复后重启 |
 | `result_save_failed` | persistence | false / true | 核对原 job 与设备实际状态 |
 | `daemon_restarted` | recovery | false / true | interrupted，核对原 job 与设备实际状态 |
+| `profile_html_validation_failed` | profile_validate | false / false | 记录参数规则错误；本次未保存、未重启 |
 | `profile_save_failed` / `profile_owner_failed` | profile_save / profile_owner | false / false | 核对配置写入和权限 |
 | `respring_failed` | respring | false / false | 配置可能已保存，核对桌面与 profileSaved |
 | `resource_busy` | lock | true / false | 清理尚未提交，等待资源恢复 |

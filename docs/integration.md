@@ -1,10 +1,10 @@
-# MKS 1.14.1 核销系统对接
+# MKS 1.15 核销系统对接
 
 本页面向通过 USB 或局域网调用 MKS 的客户端维护者。协议细节和返回示例见 [HTTP API](http-api.md)。Rootless 与 RootHide 使用相同 v1 业务接口。
 
 ## 首次接入
 
-1. 安装对应环境的 1.14.1 DEB，确认 MKS App 和 daemon 已启动。
+1. 安装对应环境的 1.15 DEB，确认 MKS App 和 daemon 已启动。
 2. 在电脑上通过 USB 读取实际 UDID。使用首尾去空白并转为大写后的值作为路由编号。
 3. 在 MKS 的「未绑定设备 / 设备绑定」或「接口文档」填写这个编号并确认。root CLI 也可完成配置，需同时核对 JSON 与退出码。
 4. 从 MKS App「接口文档」导入当前本机 token。客户端按设备保管授权，错误令牌会收到 401。
@@ -54,6 +54,12 @@ installation_id = body['installationId']  # 随设备连接记录保存
 
 `respringCommandSucceeded:true` 表示命令成功。调用方仍需核验桌面恢复、输入服务和业务界面。App 关闭与 SpringBoard 重启后，daemon 应继续提供接口，前提是越狱及 daemon 仍有效。
 
+## 1.15 参数规则与登录验收
+
+`spoof` 在保存前检查新生成的 14 段参数规则。若失败，job 进入 failed，结果为 `profile_html_validation_failed`、`stage:profile_validate`、`profileSaved:false`、`retryable:false`、`outcomeUnknown:false`，配置和桌面均未改变。接口、任务和原配置读取规则继续兼容。
+
+规则通过只表示格式和局部字段关系符合本地 HTML 校验。客户端仍应独立核验业务登录结果；`succeeded`、`profileValid:true`、桌面恢复与参数格式通过均不证明 Apple 登录所经进程实际读取一致。本轮已完成六进程主动采样，原事件与实际登录请求仍待复现，见[核查结论与诊断流程](login-incident.md)。
+
 ## 清理回执
 
 清理成功要求 `result.ok:true`、`committed:true`、`backupCreated:true` 和 `backupFormatVersion:1`。保存 `backupId` 和 `deleted` 各表真实数量。`backup` 是本地诊断路径，旧客户端仍可读取该字段。
@@ -77,6 +83,6 @@ installation_id = body['installationId']  # 随设备连接记录保存
 - 相同 Key 去重、不同动作冲突、错误 UDID 拒绝执行。
 - 备份失败不删除，提交未知保留原 job，账本损坏时停止操作。
 
-本版主机测试使用临时 SQLite 数据库，RootHide 主机路径使用合成 shim。模拟器已验证绑定交互。真机安装、权限、注入和专用 Keychain 测试数据验收仍待执行。[验证记录](validation.md)
+本版主机测试使用临时 SQLite 数据库，RootHide 主机路径使用合成 shim。模拟器绑定交互属于 1.14 历史验收；1.15 的安装和检查结果见[验证记录](validation.md)。六进程主动采样已完成；实际 Apple 登录请求及真实 Keychain 专用数据验收仍待执行。
 
 Instruments 服务准备、唤屏、ZXTouch 输入、扫码付款和卡密核销状态由调用系统独立处理。MKS 只返回自身操作及诊断结果。

@@ -1,11 +1,11 @@
 # MKS 改机
 
-自用 iOS 越狱工具，当前版本 **1.14.1**，提供 Rootless 和 RootHide 两个安装包。提供一键改机、恢复原机、全局 Keychain 清理，以及同一 Wi-Fi 内的 HTTP 调用。无卡密、激活或远程授权。
+自用 iOS 越狱工具，当前版本 **1.15**，提供 Rootless 和 RootHide 两个安装包。提供一键改机、恢复原机、全局 Keychain 清理，以及同一 Wi-Fi 内的 HTTP 调用。无卡密、激活或远程授权。
 
 | 越狱环境 | DEB 架构 | 下载 |
 | --- | --- | --- |
-| Rootless（固定 `/var/jb`） | `iphoneos-arm64` | [Rootless DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.14.1/mks_1.14.1_rootless_iphoneos-arm64.deb) |
-| RootHide（RootHide bootstrap + ElleKit） | `iphoneos-arm64e` | [RootHide DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.14.1/mks_1.14.1_roothide_iphoneos-arm64e.deb) |
+| Rootless（固定 `/var/jb`） | `iphoneos-arm64` | [Rootless DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.15/mks_1.15_rootless_iphoneos-arm64.deb) |
+| RootHide（RootHide bootstrap + ElleKit） | `iphoneos-arm64e` | [RootHide DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.15/mks_1.15_roothide_iphoneos-arm64e.deb) |
 
 ## 使用
 
@@ -17,6 +17,12 @@
 - **右上角「接口文档」**：查看本机 Wi-Fi 地址、设备 UDID 路由、访问令牌与三个功能的 curl 示例，可一键复制。
 
 HTTP 默认端口 `33237`，路径前缀 `/v1/devices/{USB_UDID}`。改机不会修改 HTTP 服务单独保存的设备编号。Bearer token 用于授权，UDID 用于路由。操作返回任务编号，查询任务确认完成；带 Idempotency-Key 的重复请求不会重复改机或清理。
+
+## 1.15 参数规则与展示
+
+一键改机默认生成 iPhone 15 Pro Max（`iPhone16,2`）、美国地区参数，遵循本地 HTML 的 14 段格式规则；App 展示校验结果、可复制参数行与 JSON。App 和 HTTP daemon 保存新生成参数前均执行校验，失败时不写入、不重启桌面。旧配置继续兼容读取，覆盖升级保留原有参数。
+
+这些检查验证字符串格式及部分字段关系；随机机型、主板、芯片、iOS 与 build 不代表真实硬件组合，也不是 Apple 认证。1.15 没有修改 Apple 登录进程的注入和缓存逻辑。本轮刷新六个目标进程后，218 项 API 读数匹配配置、330 项恢复比对一致；原事件和实际 Apple 登录请求仍待复现。[参数规则](docs/profile-rules.md) · [登录事件核查结论](docs/login-incident.md)
 
 ## 1.14.1 真机修正
 
@@ -32,6 +38,8 @@ App 的「未绑定设备 / 设备绑定」和「接口文档」可进入 USB UD
 - [HTTP API、curl 与 Python 示例](docs/http-api.md)
 - [安装、设备编号配置与升级](docs/install.md)
 - [全局 Keychain 规则及 REA/Craft Anything 分析](docs/keychain-cleaner.md)
+- [1.15 参数生成、14 段格式与校验](docs/profile-rules.md)
+- [Apple ID 登录事件与 1.15 结论](docs/login-incident.md)
 - [验证结果与实际边界](docs/validation.md)
 - [DPP 底层对照分析](docs/dpp-analysis.md)
 - [项目交接总文档](HANDOVER.md)
@@ -55,9 +63,9 @@ python3 tests/verify_packages.py
 
 用 `--scheme rootless` 或 `--scheme roothide` 可单独构建及校验某个包。用 `python3 scripts/build.py --scheme rootless --ipa` 可另外构建不含 daemon 的独立 IPA。用 `python3 scripts/build.py --simulator` 可生成模拟器 App。
 
-## 1.14.1 验证状态
+## 1.15 验证状态
 
-两个 DEB 均通过主机构建、签名、包布局、载荷、Mach-O 链接和安装脚本语法检查；两种分支的 CLI、App IPC、HTTP 与故障回归通过，模拟器验证绑定交互。RootHide 已完成本次安装和桌面重启后的状态复查。三动作与 Rootless 真机验收待完成。历史真机结果及本版检查见[验证记录](docs/validation.md)。
+本版 1094 项核心回归及 HTTP、Keychain、绑定回归通过，两份 DEB 校验通过。RootHide 已覆盖安装 1.15 / 116，桌面重启后接口与 App 正常，配置保持停用。详细结果见[验证记录](docs/validation.md)。历史版本的 Apple 账户登录验收不等于 1.15 已通过登录验证；本轮进程内主动采样不等于已验证 Apple 实际登录请求。
 
 ## 1.12 修复
 

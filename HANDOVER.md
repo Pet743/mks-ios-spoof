@@ -1,6 +1,16 @@
 # MKS 项目交接总文档
 
-更新日期：2026-11-22（Asia/Shanghai）。当前交付版本 **1.14.1**。
+更新日期：2026-11-23（Asia/Shanghai）。当前交付版本 **1.15**。
+
+## 1.15 交付与未结事项
+
+本版同步此前未提交的参数生成、14 段展示及 App/daemon 保存前规则校验。默认 `iPhone16,2`、`LL/A`；序列号两处一致、IMEI2 是 IMEI 的前 14 位、芯片输出限于 HTML 校验接受的 T7000–T8999。测试修正了把合法的 D73AP 当作错误样例的问题，增加格式导出回读检查；HTTP 版本断言同步为 1.15。详细字段与兼容性见[参数规则](docs/profile-rules.md)，本次测试、安装与状态保留结果见[验证记录](docs/validation.md)。
+
+Apple ID 原事件的实际登录请求仍为未知：本版 hook 仅更新日志版本号，注入过滤、缓存读取、登录 daemon 刷新未新增修复。本轮另以临时探针完成六进程主动 API 采样：218 项匹配、24 项原生缺失、88 项 passthrough；330 项恢复摘要一致。配置合法、任务 succeeded 和桌面重启不证明登录进程读取一致。公开仓库仅记录脱敏结论，原报告及凭据留在本机。[事件核查](docs/login-incident.md)。
+
+RootHide 手机已从 1.14.1 覆盖升级至 1.15 / 116，桌面重启后三次状态查询通过，App 已打开。主配置、授权、设备绑定和安装标识原样保留；12 条任务的 JSON 内容一致，重序列化导致账本字节哈希改变。随后完成两轮真机改机/恢复诊断，逐字节恢复原配置并保持停用，原 12 条任务保留并新增 4 条诊断动作，临时探针已移除，真实 Keychain 未清理。
+
+发行入口：[v1.15](https://github.com/Pet743/mks-ios-spoof/releases/tag/v1.15)。
 
 ## 1.14.1 真机安装与字段修正
 
@@ -49,6 +59,8 @@ HTTP 生命周期专项复测：1.11 真机三轮“启动 App → 强制终止�
 - [HTTP API 与 curl/Python 示例](docs/http-api.md)
 - [安装和设备编号配置](docs/install.md)
 - [清理范围、保护组与备份](docs/keychain-cleaner.md)
+- [1.15 参数规则](docs/profile-rules.md)
+- [Apple ID 事件结论与诊断步骤](docs/login-incident.md)
 - [公开验证摘要](docs/validation.md)
 - [DPP 静态分析与限制](docs/dpp-analysis.md)
 

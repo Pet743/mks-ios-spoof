@@ -10,6 +10,8 @@ FOUNDATION_EXPORT NSDictionary * _Nullable MKSParseLegacy(NSString *line, NSErro
 FOUNDATION_EXPORT NSData * _Nullable MKSEncodeProfile(NSDictionary *profile, NSError **error);
 FOUNDATION_EXPORT BOOL MKSWriteProfile(NSDictionary *profile, NSString *path, NSError **error);
 FOUNDATION_EXPORT NSDictionary *MKSGenerateProfile(void);
+FOUNDATION_EXPORT NSString * _Nullable MKSProfileHTMLParameters(NSDictionary *profile);
+FOUNDATION_EXPORT NSArray<NSString *> *MKSProfileHTMLRuleErrors(NSDictionary *profile);
 FOUNDATION_EXPORT id _Nullable MKSMGValue(NSDictionary * _Nullable profile, NSString *key);
 FOUNDATION_EXPORT id _Nullable MKSRegistryValue(NSDictionary * _Nullable profile, NSString *key, id _Nullable original);
 FOUNDATION_EXPORT NSString * _Nullable MKSProfileUUID(NSDictionary * _Nullable profile);
