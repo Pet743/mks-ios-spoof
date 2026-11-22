@@ -1,11 +1,11 @@
 # MKS 改机
 
-自用 iOS 越狱工具，当前版本 **1.14**，提供 Rootless 和 RootHide 两个安装包。提供一键改机、恢复原机、全局 Keychain 清理，以及同一 Wi-Fi 内的 HTTP 调用。无卡密、激活或远程授权。
+自用 iOS 越狱工具，当前版本 **1.14.1**，提供 Rootless 和 RootHide 两个安装包。提供一键改机、恢复原机、全局 Keychain 清理，以及同一 Wi-Fi 内的 HTTP 调用。无卡密、激活或远程授权。
 
 | 越狱环境 | DEB 架构 | 下载 |
 | --- | --- | --- |
-| Rootless（固定 `/var/jb`） | `iphoneos-arm64` | [Rootless DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.14/mks_1.14_rootless_iphoneos-arm64.deb) |
-| RootHide（RootHide bootstrap + ElleKit） | `iphoneos-arm64e` | [RootHide DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.14/mks_1.14_roothide_iphoneos-arm64e.deb) |
+| Rootless（固定 `/var/jb`） | `iphoneos-arm64` | [Rootless DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.14.1/mks_1.14.1_rootless_iphoneos-arm64.deb) |
+| RootHide（RootHide bootstrap + ElleKit） | `iphoneos-arm64e` | [RootHide DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.14.1/mks_1.14.1_roothide_iphoneos-arm64e.deb) |
 
 ## 使用
 
@@ -17,6 +17,10 @@
 - **右上角「接口文档」**：查看本机 Wi-Fi 地址、设备 UDID 路由、访问令牌与三个功能的 curl 示例，可一键复制。
 
 HTTP 默认端口 `33237`，路径前缀 `/v1/devices/{USB_UDID}`。改机不会修改 HTTP 服务单独保存的设备编号。Bearer token 用于授权，UDID 用于路由。操作返回任务编号，查询任务确认完成；带 Idempotency-Key 的重复请求不会重复改机或清理。
+
+## 1.14.1 真机修正
+
+修复 iOS 上新增布尔字段被序列化为数字的问题，显式返回 JSON true/false。RootHide iPhone 已覆盖安装 1.14.1，核对 App 版本、daemon、HTTP 状态及升级前后配置校验值，桌面重启后接口复查通过。Rootless 的 1.14.1 包已构建并通过主机检查。
 
 ## 1.14 对接改进
 
@@ -51,9 +55,9 @@ python3 tests/verify_packages.py
 
 用 `--scheme rootless` 或 `--scheme roothide` 可单独构建及校验某个包。用 `python3 scripts/build.py --scheme rootless --ipa` 可另外构建不含 daemon 的独立 IPA。用 `python3 scripts/build.py --simulator` 可生成模拟器 App。
 
-## 1.14 验证状态
+## 1.14.1 验证状态
 
-两个 DEB 均通过主机构建、签名、包布局、载荷、Mach-O 链接和安装脚本语法检查；两种分支的 CLI、App IPC、HTTP 与故障回归通过，模拟器验证绑定交互。1.14 的真机安装与注入待验证。历史真机结果及本版检查见[验证记录](docs/validation.md)。
+两个 DEB 均通过主机构建、签名、包布局、载荷、Mach-O 链接和安装脚本语法检查；两种分支的 CLI、App IPC、HTTP 与故障回归通过，模拟器验证绑定交互。RootHide 已完成本次安装和桌面重启后的状态复查。三动作与 Rootless 真机验收待完成。历史真机结果及本版检查见[验证记录](docs/validation.md)。
 
 ## 1.12 修复
 

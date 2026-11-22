@@ -133,8 +133,8 @@ NSDictionary *MKSKeychainClean(NSString *databasePath,NSString *backupDirectory)
         sqlite3_close(db);
         NSMutableDictionary *result=[@{@"ok":@(committed),@"committed":@(committed),@"stage":stage,
             @"sqliteCode":@(code),@"deleted":committed?deleted:@{},@"checkpointCode":@(checkpoint),
-            @"backupCreated":@(backupPath!=nil),@"backupFormatVersion":@1,
-            @"retryable":@(!outcomeUnknown && [stage isEqual:@"lock"]),@"outcomeUnknown":@(outcomeUnknown)} mutableCopy];
+            @"backupCreated":@((BOOL)(backupPath!=nil)),@"backupFormatVersion":@1,
+            @"retryable":@((BOOL)(!outcomeUnknown && [stage isEqual:@"lock"])),@"outcomeUnknown":@(outcomeUnknown)} mutableCopy];
         if(!committed) {
             NSDictionary *errors=@{@"schema":@"database_schema_unsupported",@"lock":@"resource_busy",
                 @"backup":@"backup_failed",@"delete":@"cleanup_failed",@"verify":@"cleanup_verify_failed"};

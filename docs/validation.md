@@ -1,5 +1,17 @@
 # MKS 验证摘要
 
+## 1.14.1 安装验收
+
+2026-11-22 在 USB 连接的 RootHide iPhone 上完成 1.13 → 1.14 → 1.14.1 覆盖升级。1.14 真机暴露新增布尔字段被序列化为数字的问题，1.14.1 已显式转换为 BOOL。主机 HTTP 两种分支各 61 项、合成 Keychain 77 项及两份包校验通过。
+
+- dpkg 确认 1.14.1 / iphoneos-arm64e，App Info.plist 确认 1.14.1 / 115，uicache 注册路径对应本环境安装根目录。
+- App 主程序、Info.plist 与注入库逐字节核对。daemon 的 40 字节差异仅涉及 RootHide 对 arm64e 的 __TEXT 节标记及其对应 SHA-256 代码页哈希，安装后签名验证通过。
+- HTTP 版本为 1.14.1，设备编号与 USB 一致，deviceConfigured 严格为布尔 true，环境为 roothide，API v1 和三项能力存在。
+- 桌面重启后 SpringBoard PID 更换，daemon PID 保持，三次 HTTP 状态查询成功。
+- 配置、token、device-id 与 jobs.json 的升级前后 SHA-256 一致。1.14 生成的 installation-id 在 1.14.1 升级及桌面重启后保持一致。
+
+本轮安装验收使用状态读取和桌面重启。三动作、真实 Keychain 专用数据及 Rootless 真机验收待完成。设备凭据、编号和状态文件只保存在本地诊断目录。
+
 ## 1.14 本机检查
 
 2026-11-22（Asia/Shanghai）完成本轮改进与本地验收。

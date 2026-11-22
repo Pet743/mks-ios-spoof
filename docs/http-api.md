@@ -1,4 +1,4 @@
-# MKS 1.14 HTTP API · v1
+# MKS 1.14.1 HTTP API · v1
 
 MKS 通过独立的 root daemon 提供 HTTP 服务。在 1.12 已验证的 Rootless 设备上，强制关闭 MKS App、重启桌面后仍可调用；前提是 daemon 仍运行、越狱环境有效，且调用端能连接手机网络。App 右上角「接口文档」展示当前 Wi‑Fi 地址、设备编号、访问令牌与完整示例，右上角「复制」可复制文档。
 
@@ -103,7 +103,7 @@ curl -H "Authorization: Bearer $MKS_TOKEN" "$MKS_BASE/jobs/JOB_ID"
 ```json
 {
   "ok":true,
-  "version":"1.14",
+  "version":"1.14.1",
   "apiVersion":1,
   "deviceId":"00000000-0000000000000000",
   "deviceConfigured":true,
@@ -240,3 +240,7 @@ else:
 ## 已验证范围
 
 1.14 的 Rootless、RootHide 分支均通过主机 CLI、App Unix socket、HTTP 绑定路由、幂等和故障回归。RootHide 的主机路径使用合成 shim，iOS DEB 使用固定校验的官方 SDK 构建。模拟器验证未绑定、输入错误、确认及服务未就绪提示。1.14 真机安装、真实 root 权限、App peer 路径校验、三动作与 USB 断连恢复仍需设备验收。真实 Keychain 删除使用专用测试数据后再验收。[验证记录](validation.md)
+
+## 1.14.1 真机字段类型
+
+真机发现 `deviceConfigured` 在 1.14 中被输出为数字 1。1.14.1 显式转换 BOOL，同时修正清理回执的 backupCreated 与 retryable 表达式，保证对应字段是 JSON true/false。主机回归已改为严格检查布尔类型。RootHide 真机升级后已确认 deviceConfigured 为布尔值 true，API v1 与设备绑定状态正常。

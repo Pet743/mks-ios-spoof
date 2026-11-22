@@ -87,7 +87,7 @@ def main():
         try:
             initial=request('GET','/v1/status');check(initial[1]['profileValid'] is False and initial[1]['deviceId']==DEVICE)
             status=initial[1]
-            check(status['apiVersion']==1 and status['deviceConfigured'] and status['version']=='1.14')
+            check(status['apiVersion']==1 and status['deviceConfigured'] is True and status['version']=='1.14.1')
             check(status['environment']=={'jailbreak':scheme,'layoutVersion':1})
             check(status['capabilities']=={'spoof':True,'restore':True,'keychainClean':True})
             installation=status['installationId'];check(len(installation)==36)
@@ -134,7 +134,7 @@ def main():
             result=done(clean);check(result['state']=='succeeded' and result['result']['committed'])
             check(sum(result['result']['deleted'].values())==4 and Path(result['result']['backup']).exists())
             receipt=result['result']
-            check(receipt['backupCreated'] and receipt['backupFormatVersion']==1 and receipt['backupId']==Path(receipt['backup']).stem)
+            check(receipt['backupCreated'] is True and receipt['backupFormatVersion']==1 and receipt['backupId']==Path(receipt['backup']).stem)
             check(not receipt['outcomeUnknown'])
             check((root/'resprings').read_text().count('respring')==2)
             check((state/'jobs.json').stat().st_mode&0o777==0o600)

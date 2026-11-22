@@ -1,20 +1,20 @@
-# MKS 1.14 安装与升级
+# MKS 1.14.1 安装与升级
 
 按越狱环境选择一份 DEB。两个包均包含 App、注入库、daemon、Keychain 清理与 HTTP 服务。
 
 | 越狱环境 | 依赖 | 安装包 |
 | --- | --- | --- |
-| Rootless，越狱根目录是 `/var/jb` | ElleKit | [mks_1.14_rootless_iphoneos-arm64.deb](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.14/mks_1.14_rootless_iphoneos-arm64.deb) |
-| RootHide，使用自己的 bootstrap 根目录 | RootHide 核心包及该环境的 ElleKit | [mks_1.14_roothide_iphoneos-arm64e.deb](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.14/mks_1.14_roothide_iphoneos-arm64e.deb) |
+| Rootless，越狱根目录是 `/var/jb` | ElleKit | [mks_1.14.1_rootless_iphoneos-arm64.deb](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.14.1/mks_1.14.1_rootless_iphoneos-arm64.deb) |
+| RootHide，使用自己的 bootstrap 根目录 | RootHide 核心包及该环境的 ElleKit | [mks_1.14.1_roothide_iphoneos-arm64e.deb](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.14.1/mks_1.14.1_roothide_iphoneos-arm64e.deb) |
 
 用越狱环境的包管理器打开对应文件并安装。也可在该环境的 root shell 中执行对应命令，其中 `/path/to` 换成当前 shell 可访问的下载目录。
 
 ```sh
 # Rootless
-dpkg -i /path/to/mks_1.14_rootless_iphoneos-arm64.deb
+dpkg -i /path/to/mks_1.14.1_rootless_iphoneos-arm64.deb
 
 # RootHide bootstrap shell
-dpkg -i /path/to/mks_1.14_roothide_iphoneos-arm64e.deb
+dpkg -i /path/to/mks_1.14.1_roothide_iphoneos-arm64e.deb
 ```
 
 同一越狱环境可覆盖升级。安装脚本保留已有主配置、HTTP 状态和 Keychain 备份。首次安装时，当主配置不存在而原系统的 `/var/mobile/Media/mks.config` 存在，安装脚本会迁移这份旧配置。切换越狱环境后，两个安装根目录内的数据各自独立。需要先卸载旧包时，执行 `dpkg -r com.mks.spoof`，随后安装对应版本。
@@ -66,4 +66,4 @@ Rootless 使用 `/var/jb`。RootHide 在 bootstrap shell 中使用上表路径�
 
 恢复原机写入 `enabled:false` 配置。Keychain 清理后的备份与恢复是独立操作。[Keychain 文档](keychain-cleaner.md)
 
-1.14 的两个安装包已通过本机验证。真机安装与注入待验证。[验证记录](validation.md)
+1.14.1 的两个安装包已通过本机验证。RootHide 已完成覆盖安装、App 注册与桌面重启后的接口复查。三动作和 Rootless 真机验收待完成。[验证记录](validation.md)

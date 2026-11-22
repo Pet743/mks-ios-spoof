@@ -25,10 +25,10 @@ NSDictionary *MKSOperationStatus(void) {
 #else
     NSString *environment=@"rootless";
 #endif
-    return @{@"ok":@YES,@"apiVersion":@1,@"deviceConfigured":@(device!=nil),
+    return @{@"ok":@YES,@"apiVersion":@1,@"deviceConfigured":@((BOOL)(device!=nil)),
         @"environment":@{@"jailbreak":environment,@"layoutVersion":@1},
         @"capabilities":@{@"spoof":@YES,@"restore":@YES,@"keychainClean":@YES},
-        @"installationId":MKSHTTPInstallationID() ?: NSNull.null,@"version":@"1.14",@"enabled":@([profile[@"enabled"] boolValue]),
+        @"installationId":MKSHTTPInstallationID() ?: NSNull.null,@"version":@"1.14.1",@"enabled":@([profile[@"enabled"] boolValue]),
         @"profileValid":@((BOOL)(profile!=nil)),@"deviceId":device ?: NSNull.null};
 }
 NSDictionary *MKSPerformOperation(NSString *action) {

@@ -1,6 +1,10 @@
 # MKS 项目交接总文档
 
-更新日期：2026-11-22（Asia/Shanghai）。当前交付版本 **1.14**。
+更新日期：2026-11-22（Asia/Shanghai）。当前交付版本 **1.14.1**。
+
+## 1.14.1 真机安装与字段修正
+
+RootHide iPhone 已覆盖安装 1.14.1 / 115，状态接口、App 注册、文件载荷与桌面重启后的三次查询通过。1.14 真机发现 deviceConfigured 的 JSON 类型为数字，已在 1.14.1 显式使用 BOOL，并同步修正清理回执相关布尔表达式。配置、授权和幂等账本校验值保持一致。详细结果见 [验证记录](docs/validation.md)，安装包见 [v1.14.1](https://github.com/Pet743/mks-ios-spoof/releases/tag/v1.14.1)。
 
 ## 1.14 对接改进
 

@@ -50,7 +50,7 @@ def main():
             before={table:rows(db,table) for table in ['genp','cert','keys','inet']}
             result=clean(path,case/'backup')
             check(result['ok'] and result['committed'])
-            check(result['backupCreated'] and result['backupFormatVersion']==1)
+            check(result['backupCreated'] is True and result['backupFormatVersion']==1)
             check(result['backupId']==Path(result['backup']).stem and not result['outcomeUnknown'])
             check(result['deleted']=={'genp':2,'cert':2,'keys':2,'inet':4})
             check([r[1] for r in rows(db,'genp')]==['apple',None])
@@ -94,7 +94,7 @@ def main():
         case=root/'commit-unknown';case.mkdir();path=case/'fixture.sqlite';db=fixture(path)
         before={table:rows(db,table) for table in ['genp','cert','keys','inet']}
         result=clean(path,case/'backup',dict(os.environ,MKS_TEST_COMMIT_FAILURE='1'))
-        check(not result['committed'] and result['outcomeUnknown'] and not result['retryable'])
+        check(result['committed'] is False and result['outcomeUnknown'] is True and result['retryable'] is False)
         check(result['error']=='cleanup_outcome_unknown' and result['backupCreated'])
         for table in before:check(rows(db,table)==before[table])
         db.close()
