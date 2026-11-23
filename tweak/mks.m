@@ -27,7 +27,7 @@ static NSDictionary *currentProfile(void) {
 // from the internal Copy implementation. JetEngine consumes that reference.
 // Give every caller its own +1 so releasing it cannot invalidate profile values.
 static CFStringRef (*orig_MGGetStringAnswer)(CFStringRef);
-static CFStringRef my_MGGetStringAnswer(CFStringRef key) {
+static CFStringRef __attribute__((unused)) my_MGGetStringAnswer(CFStringRef key) {
     @autoreleasepool {
         id value=key?MKSMGValue(currentProfile(),(__bridge NSString *)key):nil;
         if ([value isKindOfClass:NSString.class]) return (CFStringRef)CFBridgingRetain(value);
@@ -59,17 +59,13 @@ static CFTypeRef my_MGCopyAnswer(CFStringRef key) {
 }
 static CFTypeRef my_MGCopyAnswerInternal(CFStringRef key,uint32_t *answerType) {
     @autoreleasepool {
-        // This is a 32-bit MobileGestalt type output, not opaque context or
-        // CFTypeID. Typed getters assert on it. Let the original populate it,
-        // retaining its exact enum and unknown-key behavior on each OS build.
-        CFTypeRef original=orig_MGCopyAnswerInternal?orig_MGCopyAnswerInternal(key,answerType):NULL;
+#if defined(MKS_ROOTHIDE)
         NSDictionary *p=currentProfile();
         id value=key?MKSMGValue(p,(__bridge NSString *)key):nil;
-#if defined(MKS_ROOTHIDE)
-        // RootHide can withhold native identity answers from a sandboxed
-        // caller. Keep Copy and String getters consistent for configured
-        // fields, including the internal getter's 32-bit type output.
-        if(value && !original) {
+        // DPP constructs configured identity answers before asking the native
+        // getter. Preserve that ordering without leaving typed getters' real
+        // 32-bit MG type output uninitialized.
+        if(value) {
             CFTypeID type=CFGetTypeID((__bridge CFTypeRef)value);
             uint32_t mgType=type==CFStringGetTypeID()?9:
                 type==CFNumberGetTypeID()?6:type==CFDataGetTypeID()?10:0;
@@ -78,6 +74,12 @@ static CFTypeRef my_MGCopyAnswerInternal(CFStringRef key,uint32_t *answerType) {
                 return CFBridgingRetain(value);
             }
         }
+        CFTypeRef original=orig_MGCopyAnswerInternal?orig_MGCopyAnswerInternal(key,answerType):NULL;
+#else
+        // Keep Rootless's original ordering and native type/absence behavior.
+        CFTypeRef original=orig_MGCopyAnswerInternal?orig_MGCopyAnswerInternal(key,answerType):NULL;
+        NSDictionary *p=currentProfile();
+        id value=key?MKSMGValue(p,(__bridge NSString *)key):nil;
 #endif
         if(value && original && CFGetTypeID(original)==CFGetTypeID((__bridge CFTypeRef)value)) {
             CFRelease(original);
@@ -87,7 +89,7 @@ static CFTypeRef my_MGCopyAnswerInternal(CFStringRef key,uint32_t *answerType) {
     }
 }
 static CFTypeRef (*orig_IORegistryEntryCreateCFProperty)(io_registry_entry_t,CFStringRef,CFAllocatorRef,IOOptionBits);
-static CFTypeRef my_IORegistryEntryCreateCFProperty(io_registry_entry_t entry,CFStringRef key,CFAllocatorRef alloc,IOOptionBits options) {
+static CFTypeRef __attribute__((unused)) my_IORegistryEntryCreateCFProperty(io_registry_entry_t entry,CFStringRef key,CFAllocatorRef alloc,IOOptionBits options) {
     CFTypeRef original=orig_IORegistryEntryCreateCFProperty?orig_IORegistryEntryCreateCFProperty(entry,key,alloc,options):NULL;
     @autoreleasepool {
         id value=key?MKSRegistryValue(currentProfile(),(__bridge NSString *)key,(__bridge id)original):nil;
@@ -99,6 +101,18 @@ static CFTypeRef my_IORegistryEntryCreateCFProperty(io_registry_entry_t entry,CF
 }
 static CFTypeRef (*orig_IORegistryEntrySearchCFProperty)(io_registry_entry_t,const char *,CFStringRef,CFAllocatorRef,IOOptionBits);
 static CFTypeRef my_IORegistryEntrySearchCFProperty(io_registry_entry_t entry,const char *plane,CFStringRef key,CFAllocatorRef alloc,IOOptionBits options) {
+#if defined(MKS_ROOTHIDE)
+    @autoreleasepool {
+        // DPP's Search hook supplies only this explicit identity whitelist,
+        // including when the native lookup is withheld in a sandbox.
+        NSString *name=(__bridge NSString *)key;
+        id shape=[name isEqual:@"IOPlatformSerialNumber"]?@"":
+            [@[@"unique-chip-id",@"die-id",@"IOMACAddress",@"mac-address-wifi0",
+               @"mac-address-bluetooth0",@"local-mac-address",@"udid-version"] containsObject:name ?: @""]?NSData.data:nil;
+        id replacement=shape?MKSRegistryValue(currentProfile(),name,shape):nil;
+        if(replacement)return CFBridgingRetain(replacement);
+    }
+#endif
     CFTypeRef original=orig_IORegistryEntrySearchCFProperty?orig_IORegistryEntrySearchCFProperty(entry,plane,key,alloc,options):NULL;
     @autoreleasepool {
         id value=key?MKSRegistryValue(currentProfile(),(__bridge NSString *)key,(__bridge id)original):nil;
@@ -125,12 +139,12 @@ static CFDictionaryRef my_CFCopySystemVersionDictionary(void) {
     }
 }
 static id (*orig_idfv)(id,SEL);
-static id my_idfv(id self,SEL cmd) {
+static id __attribute__((unused)) my_idfv(id self,SEL cmd) {
     NSString *uuid=MKSProfileUUID(currentProfile());
     return uuid?[[NSUUID alloc] initWithUUIDString:uuid]:(orig_idfv?orig_idfv(self,cmd):nil);
 }
 static id (*orig_idfa)(id,SEL);
-static id my_idfa(id self,SEL cmd) {
+static id __attribute__((unused)) my_idfa(id self,SEL cmd) {
     id original=orig_idfa?orig_idfa(self,cmd):nil;
     // Keep the all-zero identifier returned when advertising tracking is denied.
     if ([original isKindOfClass:NSUUID.class] && [[original UUIDString] isEqual:@"00000000-0000-0000-0000-000000000000"]) return original;
@@ -254,9 +268,13 @@ __attribute__((constructor)) static void mks_init(void) {
         if(!install) { NSLog(@"MKS: hook framework unavailable; no hooks installed"); return; }
         dlopen("/usr/lib/libMobileGestalt.dylib",RTLD_LAZY|RTLD_GLOBAL);
         dlopen("/System/Library/Frameworks/IOKit.framework/IOKit",RTLD_LAZY|RTLD_GLOBAL);
+#if !defined(MKS_ROOTHIDE)
         hook(install,"MGGetStringAnswer",(void *)my_MGGetStringAnswer,(void **)&orig_MGGetStringAnswer);
+#endif
         hookMG(install);
+#if !defined(MKS_ROOTHIDE)
         hook(install,"IORegistryEntryCreateCFProperty",(void *)my_IORegistryEntryCreateCFProperty,(void **)&orig_IORegistryEntryCreateCFProperty);
+#endif
         hook(install,"IORegistryEntrySearchCFProperty",(void *)my_IORegistryEntrySearchCFProperty,(void **)&orig_IORegistryEntrySearchCFProperty);
 #if defined(MKS_ROOTHIDE)
         if([NSProcessInfo.processInfo.processName isEqual:@"Preferences"])
@@ -266,6 +284,7 @@ __attribute__((constructor)) static void mks_init(void) {
         hook(install,"sysctlbyname",(void *)my_sysctlbyname,(void **)&orig_sysctlbyname);
         hook(install,"sysctl",(void *)my_sysctl,(void **)&orig_sysctl);
 #endif
+#if !defined(MKS_ROOTHIDE)
         Class device=objc_getClass("UIDevice");
         SEL idfv=sel_registerName("identifierForVendor");
         if(message && class_getInstanceMethod(device,idfv)) message(device,idfv,(IMP)my_idfv,(IMP *)&orig_idfv);
@@ -273,10 +292,11 @@ __attribute__((constructor)) static void mks_init(void) {
         Class ads=objc_getClass("ASIdentifierManager");
         SEL advertising=sel_registerName("advertisingIdentifier");
         if(message && class_getInstanceMethod(ads,advertising)) message(ads,advertising,(IMP)my_idfa,(IMP *)&orig_idfa);
+#endif
         installPrivateGetters(message);
         privateMessageInstaller=message;
         _dyld_register_func_for_add_image(onImageLoaded);
-        NSLog(@"MKS 1.15.4: MG=%d/%d IO=%d/%d sysctl=%d/%d",orig_MGCopyAnswer!=NULL || orig_MGCopyAnswerInternal!=NULL,orig_MGGetStringAnswer!=NULL,
+        NSLog(@"MKS 1.15.8: MG=%d/%d IO=%d/%d sysctl=%d/%d",orig_MGCopyAnswer!=NULL || orig_MGCopyAnswerInternal!=NULL,orig_MGGetStringAnswer!=NULL,
             orig_IORegistryEntryCreateCFProperty!=NULL,orig_IORegistryEntrySearchCFProperty!=NULL,orig_sysctl!=NULL,orig_sysctlbyname!=NULL);
     }
 }

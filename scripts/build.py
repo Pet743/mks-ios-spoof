@@ -174,10 +174,17 @@ def tweak_filter(scheme):
         return payload
     if scheme != 'roothide':
         raise ValueError(f'Unknown scheme: {scheme}')
-    info = plistlib.loads(payload)
-    # RootHide login was verified with AppStore and store services still
-    # injected, while akd retained its native authentication environment.
-    info['Filter']['Executables'].remove('akd')
+    # Match DPP's runtime-enabled filter (daemon 0x10000c438), including UIKit
+    # hosts, rather than assuming the package's initial filter is final.
+    info = {'Filter': {
+        'Bundles': ['com.apple.UIKit', 'com.apple.AppStore'],
+        'Executables': [
+            'SpringBoard', 'ptpd', 'lsd', 'appstored', 'atc', 'CommCenter',
+            'adid', 'homed', 'itunesstored', 'cloudd', 'familycircled',
+            'storebookkeeperd', 'itunescloudd', 'identityservicesd', 'absd',
+            'fairplayd.H2', 'SIMSetupUIService', 'accountsd', 'akd', 'lockdownd',
+        ],
+    }}
     return plistlib.dumps(info)
 
 
