@@ -9,8 +9,19 @@ static CFTypeRef missingAnswer(CFStringRef key,uint32_t *type) {
 static CFTypeRef incompatibleAnswer(CFStringRef key,uint32_t *type) {
     nativeCalls++;(void)key;if(type) *type=6;return CFBridgingRetain(@123);
 }
+#if defined(MKS_ROOTHIDE)
+static CFTypeRef primingAnswer(CFStringRef key,uint32_t *type) {
+    nativeCalls++;CHECK(readingProfile>0);CHECK(currentProfile()==nil);CHECK(type==NULL);
+    CHECK(key!=NULL);return CFBridgingRetain(@"native priming answer");
+}
+#endif
 static CFTypeRef missingSearch(io_registry_entry_t entry,const char *plane,CFStringRef key,CFAllocatorRef allocator,IOOptionBits options) {
     (void)entry;(void)plane;(void)key;(void)allocator;(void)options;searchCalls++;return NULL;
+}
+static CFTypeRef presentSearch(io_registry_entry_t entry,const char *plane,CFStringRef key,CFAllocatorRef allocator,IOOptionBits options) {
+    (void)entry;(void)plane;(void)allocator;(void)options;searchCalls++;
+    if(CFEqual(key,CFSTR("IOPlatformUUID")))return CFBridgingRetain(@"12345678-1234-1234-1234-123456789ABC");
+    const uint8_t bytes[]={0x10,0x20,0x30,0x40};return CFDataCreate(NULL,bytes,sizeof(bytes));
 }
 int main(int argc,char **argv) {
     @autoreleasepool {
@@ -18,6 +29,14 @@ int main(int argc,char **argv) {
         NSString *path=@(argv[1]);
         NSDictionary *profile=MKSGenerateProfile();
 #if defined(MKS_ROOTHIDE)
+        NSDictionary *generated=profile[@"values"];
+        CHECK([generated[@"ProductType"] isEqual:@"iPhone16,2"]);
+        CHECK([generated[@"HWModelStr"] isEqual:@"D84AP"]);
+        CHECK([generated[@"HardwarePlatform"] isEqual:@"T8130"]);
+        CHECK([generated[@"ProductVersion"] isEqual:@"17.0"]);
+        CHECK([generated[@"BuildVersion"] isEqual:@"21A329"]);
+        CHECK([generated[@"ModelNumber"] isEqual:@"MU773LL/A"]);
+        CHECK(![generated[@"SerialNumber"] isEqual:MKSGenerateProfile()[@"values"][@"SerialNumber"]]);
         CHECK([MKSMGValue(profile,@"ModelNumber") isEqual:[profile[@"values"][@"ModelNumber"] substringToIndex:5]]);
         CHECK([MKSMGValue(profile,@"MobileEquipmentIdentifier") isEqual:profile[@"values"][@"InternationalMobileEquipmentIdentity2"]]);
         CHECK(MKSMGValue(profile,@"InternationalMobileEquipmentIdentity2")==nil);
@@ -34,6 +53,11 @@ int main(int argc,char **argv) {
 #endif
         CHECK(MKSWriteProfile(profile,path,NULL));
         store=[[MKSProfileStore alloc] initWithPaths:@[path]];
+#if defined(MKS_ROOTHIDE)
+        orig_MGCopyAnswerInternal=primingAnswer;nativeCalls=0;primeNativeIdentityCache();
+        CHECK(nativeCalls==5 && readingProfile==0);
+        CHECK([currentProfile() isEqual:profile]);
+#endif
         orig_MGCopyAnswerInternal=missingAnswer;
         for(NSString *key in @[@"SerialNumber",@"MLBSerialNumber",@"UniqueChipID",@"UniqueDeviceIDData",
                               @"InternationalMobileEquipmentIdentity",@"WifiAddress",@"MobileEquipmentIdentifier",@"ModelNumber"]) {
@@ -98,6 +122,17 @@ int main(int argc,char **argv) {
         searchCalls=0;
         CHECK(my_IORegistryEntrySearchCFProperty(0,"IOService",CFSTR("UnrelatedProperty"),NULL,0)==NULL && searchCalls==1);
         CHECK(my_IORegistryEntrySearchCFProperty(0,"IOService",NULL,NULL,0)==NULL);
+#if defined(MKS_ROOTHIDE)
+        orig_IORegistryEntrySearchCFProperty=presentSearch;
+        for(NSString *key in @[@"board-id",@"IOPlatformUUID",@"serial-number"]) {
+            const uint8_t bytes[]={0x10,0x20,0x30,0x40};
+            id native=[key isEqual:@"IOPlatformUUID"]?@"12345678-1234-1234-1234-123456789ABC":[NSData dataWithBytes:bytes length:sizeof(bytes)];searchCalls=0;
+            answer=my_IORegistryEntrySearchCFProperty(0,"IOService",(__bridge CFStringRef)key,NULL,0);
+            CHECK(answer && [(__bridge id)answer isEqual:native] && searchCalls==1);
+            if(answer)CFRelease(answer);
+        }
+        orig_IORegistryEntrySearchCFProperty=missingSearch;
+#endif
         orig_MGCopyAnswerInternal=missingAnswer;
         CHECK(MKSWriteProfile(@{@"schemaVersion":@2,@"enabled":@NO,@"name":@"off",@"values":@{}},path,NULL));
         type=99;

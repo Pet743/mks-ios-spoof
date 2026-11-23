@@ -36,6 +36,23 @@ static CFStringRef __attribute__((unused)) my_MGGetStringAnswer(CFStringRef key)
 }
 static CFTypeRef (*orig_MGCopyAnswer)(CFStringRef);
 static CFTypeRef (*orig_MGCopyAnswerInternal)(CFStringRef,uint32_t *);
+#if defined(MKS_ROOTHIDE)
+static void primeNativeIdentityCache(void) {
+    // DPP 0x7f9c primes the original MG path before loading its replacement
+    // parameters. Nested native reads must not consult an enabled MKS profile.
+    readingProfile++;
+    @try {
+        for (NSString *key in @[@"VasUgeSzVyHdB27g2XpN0g",@"re6Zb+zwFKJNlkQTUeT+/w",
+                                @"Q1Ty5w8gxMWHx3p4lQ1fhA",@"6WdGcQGw4VLzrgxJo+bcrw",
+                                @"DcQNvnO5Uhpc1jjGIrzyng"]) {
+            CFTypeRef value=orig_MGCopyAnswerInternal?
+                orig_MGCopyAnswerInternal((__bridge CFStringRef)key,NULL):
+                orig_MGCopyAnswer?orig_MGCopyAnswer((__bridge CFStringRef)key):NULL;
+            if (value) CFRelease(value);
+        }
+    } @finally { readingProfile--; }
+}
+#endif
 static CFTypeRef patchBlob(NSDictionary *profile,CFTypeRef original) {
     if(!original || CFGetTypeID(original)!=CFDictionaryGetTypeID() || ![profile[@"enabled"] boolValue]) return original;
     NSDictionary *keys=@{@"InternationalMobileEquipmentIdentity":@"InternationalMobileEquipmentIdentity",
@@ -114,6 +131,12 @@ static CFTypeRef my_IORegistryEntrySearchCFProperty(io_registry_entry_t entry,co
     }
 #endif
     CFTypeRef original=orig_IORegistryEntrySearchCFProperty?orig_IORegistryEntrySearchCFProperty(entry,plane,key,alloc,options):NULL;
+#if defined(MKS_ROOTHIDE)
+    // Every property outside the explicit Search whitelist stays native.
+    // The shared Rootless mapper also knows board-id/UUID/serial-number, but
+    // applying those here would extend the RootHide whitelist after all.
+    return original;
+#else
     @autoreleasepool {
         id value=key?MKSRegistryValue(currentProfile(),(__bridge NSString *)key,(__bridge id)original):nil;
         if (!value) return original;
@@ -121,6 +144,7 @@ static CFTypeRef my_IORegistryEntrySearchCFProperty(io_registry_entry_t entry,co
         if(original) CFRelease(original);
         return result;
     }
+#endif
 }
 static CFDictionaryRef (*orig_CFCopySystemVersionDictionary)(void);
 static CFDictionaryRef my_CFCopySystemVersionDictionary(void) {
@@ -272,6 +296,9 @@ __attribute__((constructor)) static void mks_init(void) {
         hook(install,"MGGetStringAnswer",(void *)my_MGGetStringAnswer,(void **)&orig_MGGetStringAnswer);
 #endif
         hookMG(install);
+#if defined(MKS_ROOTHIDE)
+        primeNativeIdentityCache();
+#endif
 #if !defined(MKS_ROOTHIDE)
         hook(install,"IORegistryEntryCreateCFProperty",(void *)my_IORegistryEntryCreateCFProperty,(void **)&orig_IORegistryEntryCreateCFProperty);
 #endif
@@ -296,7 +323,7 @@ __attribute__((constructor)) static void mks_init(void) {
         installPrivateGetters(message);
         privateMessageInstaller=message;
         _dyld_register_func_for_add_image(onImageLoaded);
-        NSLog(@"MKS 1.15.8: MG=%d/%d IO=%d/%d sysctl=%d/%d",orig_MGCopyAnswer!=NULL || orig_MGCopyAnswerInternal!=NULL,orig_MGGetStringAnswer!=NULL,
+        NSLog(@"MKS 1.15.12: MG=%d/%d IO=%d/%d sysctl=%d/%d",orig_MGCopyAnswer!=NULL || orig_MGCopyAnswerInternal!=NULL,orig_MGGetStringAnswer!=NULL,
             orig_IORegistryEntryCreateCFProperty!=NULL,orig_IORegistryEntrySearchCFProperty!=NULL,orig_sysctl!=NULL,orig_sysctlbyname!=NULL);
     }
 }

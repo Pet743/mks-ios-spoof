@@ -14,6 +14,9 @@
 #include <sys/wait.h>
 #include <errno.h>
 #include "../common/MKSPaths.h"
+#if defined(MKS_ROOTHIDE)
+#include "MKSProcessRefresh.h"
+#endif
 
 #ifndef APP_PORT
 #define APP_PORT 33236
@@ -36,6 +39,13 @@ static void logmsg(const char *fmt, ...) {
 }
 
 int MKSRespring(void) {
+#if defined(MKS_ROOTHIDE)
+    MKSRefreshResult refresh;
+    int refreshed=MKSRefreshIdentityProcesses(&refresh);
+    logmsg("identity refresh matched=%u signaled=%u finished=%u errors=%u timeout=%u rc=%d",
+           refresh.matched,refresh.signaled,refresh.finished,refresh.errors,refresh.timedOut,refreshed);
+    if (refreshed) return -1;
+#endif
     logmsg("respring requested -> killall SpringBoard");
     unlink(FLAG);
     const char *paths[] = {MKS_JB_PATH("/usr/bin/killall"), "/usr/bin/killall", MKS_JB_PATH("/bin/killall"), NULL};

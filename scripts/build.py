@@ -205,7 +205,8 @@ def build_device(scheme, ipa):
     run(flags + ['-fobjc-arc', '-dynamiclib', 'tweak/mks.m', 'common/MKSProfile.m',
                  '-framework', 'Foundation', *link, f'-Wl,-install_name,{install_name}', '-o', dylib])
     run(flags + ['-c', 'daemon/mksd.c', '-o', build / 'mksd.o'])
-    run(flags + ['-fobjc-arc', build / 'mksd.o', 'daemon/MKSStatus.m', 'daemon/MKSKeychainService.m',
+    refresh = ['daemon/MKSProcessRefresh.c', '-lproc'] if roothide else []
+    run(flags + ['-fobjc-arc', build / 'mksd.o', *refresh, 'daemon/MKSStatus.m', 'daemon/MKSKeychainService.m',
                  'daemon/MKSOperations.m', 'daemon/MKSHTTPServer.m', 'daemon/MKSSetup.m', 'common/MKSHTTP.m',
                  'common/MKSProfile.m', 'common/MKSKeychain.m', 'common/MKSKeychainIPC.m',
                  '-framework', 'Foundation', '-lsqlite3', *link, '-o', daemon])

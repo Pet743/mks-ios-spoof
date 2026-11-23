@@ -148,6 +148,12 @@ NSDictionary *MKSGenerateProfile(void) {
     for(int i=0;i<10;i++) { NSString *s=[body stringByAppendingFormat:@"%d",i]; if(luhn(s)) { imei=s; break; } }
     NSString *sn=pick(@"ABCDEFGHJKLMNPQRSTUVWXYZ123456789",10), *wifi=mac();
     NSString *ecid=[@"0x" stringByAppendingString:pick(@"0123456789ABCDEF",16)];
+#if defined(MKS_ROOTHIDE)
+    // One published hardware/software tuple. Random identifiers remain fresh;
+    // independently invented boards, OS versions and builds do not describe a device.
+    NSString *chip=@"T8130", *board=@"D84AP", *part=@"MU773LL/A";
+    NSString *build=@"21A329", *version=@"17.0";
+#else
     NSString *chip=[NSString stringWithFormat:@"T%u",7000+arc4random_uniform(2000)];
     NSString *board=[NSString stringWithFormat:@"D%uAP",80+arc4random_uniform(10)];
     NSString *part=[NSString stringWithFormat:@"M%@%@%C%@LL/A",pick(@"ABCDEFGHJKLMNPQRSTUVWXYZ",1),
@@ -156,6 +162,7 @@ NSDictionary *MKSGenerateProfile(void) {
         [@"ABCDEFGHJKLMNPQRSTUVWXYZ" characterAtIndex:arc4random_uniform(24)],10+arc4random_uniform(90)];
     NSString *version=[NSString stringWithFormat:@"%u.%u.%u",16+arc4random_uniform(3),
         arc4random_uniform(10),arc4random_uniform(10)];
+#endif
     return @{@"schemaVersion":@2,@"enabled":@YES,@"name":[@"随机参数 " stringByAppendingString:sn],@"values":@{
         @"SerialNumber":sn,@"MLBSerialNumber":sn,
         @"InternationalMobileEquipmentIdentity":imei ?: @"000000000000000",@"InternationalMobileEquipmentIdentity2":body,
