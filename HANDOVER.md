@@ -1,6 +1,22 @@
 # MKS 项目交接总文档
 
-更新日期：2026-11-23（Asia/Shanghai）。当前交付版本 **1.15**。
+**当前结果：** 1.15.12 / 128 的无双重认证账号已完成正常退出、改机、一次密码登录和重开保持，用户后台确认机型、系统和 IMEI 一致。双重认证账号仍需验证后再次提交密码，同一身份诊断性重试可登录；Keychain 多次写入成功，尚未定位首次认证后的商店续接失败位置。不得把该诊断重试算成一次密码通过。当前手机保留启用状态及无双重认证账号的已登录现场，序列号 USMNVPCTKR。临时会话探针已移除，v1.15.4 原始标签与安装包保留。[当前证据及待办](docs/roothide-login-compatibility.md)。
+
+[1.15.12 发布与完整复测记录](docs/roothide-login-compatibility.md)：按用户要求发布已测试安装包，双重认证问题继续保留。
+
+更新日期：2026-11-23（Asia/Shanghai）。当前发布版本 **1.15.12 / 128**；历史保留版本 **1.15.4 / 120** 的标签与原始安装包不变。
+
+## 1.15.12 发布
+
+[Release](https://github.com/Pet743/mks-ios-spoof/releases/tag/v1.15.12) 提供 RootHide / Rootless 完整 DEB 和 SHA256SUMS。使用越狱环境的包管理器安装；巨魔单装 IPA 不包含完整注入库和后台服务。公开安装包与本轮留存的已测试产物逐字节相同；仅更新发布文档，不重新生成二进制。RootHide 无双重认证账号通过标准流程和后台核对，双重认证账号仍需诊断重试，Rootless 没有本轮真机登录验收。
+
+## 1.15.4 固定版本：本轮 RootHide 验收通过
+
+用户要求同时满足“改机启用后 App Store 登录成功”和“后台设备字段与随机参数一致”。本轮退出媒体账号、关闭 App Store、通过 MKS spoof 生成全新参数，刷新登录进程后，只提交一次密码并完成双重认证；登录后重开保持。用户提供后台设备详情截图，机型、序列号、系统版本三项均与该轮配置一致。
+
+1.15.4 将手机已验证的过滤调整写入构建：RootHide 仅移除 akd，AppStore 和其他商店/账户进程保留注入；Rootless 过滤不变。保留此前 RootHide MG 空答案类型修正、Preferences 专用系统版本 hook 和不安装 sysctl hook 的组合。这些是联合验证结果，不将成功归因于唯一一个 hook。
+
+已按用户要求冻结此版本。DPP 可能更完善的 Settings 显示 getter、特定设备信息控制器及 MEID 默认参数差异只记录，不加入本版。后续从新版本迭代，1.15.4 的源码、安装包和验收记录保留。[专项证据](docs/roothide-login-investigation.md) · [功能差异](docs/dpp-parity.md) · [v1.15.4](https://github.com/Pet743/mks-ios-spoof/releases/tag/v1.15.4)。
 
 ## 1.15 交付与未结事项
 

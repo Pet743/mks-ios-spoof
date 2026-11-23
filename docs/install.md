@@ -1,20 +1,22 @@
-# MKS 1.15 安装与升级
+# MKS 1.15.12 安装与升级
 
 按越狱环境选择一份 DEB。两个包均包含 App、注入库、daemon、Keychain 清理与 HTTP 服务。
 
 | 越狱环境 | 依赖 | 安装包 |
 | --- | --- | --- |
-| Rootless，越狱根目录是 `/var/jb` | ElleKit | [mks_1.15_rootless_iphoneos-arm64.deb](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.15/mks_1.15_rootless_iphoneos-arm64.deb) |
-| RootHide，使用自己的 bootstrap 根目录 | RootHide 核心包及该环境的 ElleKit | [mks_1.15_roothide_iphoneos-arm64e.deb](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.15/mks_1.15_roothide_iphoneos-arm64e.deb) |
+| Rootless，越狱根目录是 `/var/jb` | ElleKit | [mks_1.15.12_rootless_iphoneos-arm64.deb](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.15.12/mks_1.15.12_rootless_iphoneos-arm64.deb) |
+| RootHide，使用自己的 bootstrap 根目录 | RootHide 核心包及该环境的 ElleKit | [mks_1.15.12_roothide_iphoneos-arm64e.deb](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.15.12/mks_1.15.12_roothide_iphoneos-arm64e.deb) |
 
-用越狱环境的包管理器打开对应文件并安装。也可在该环境的 root shell 中执行对应命令，其中 `/path/to` 换成当前 shell 可访问的下载目录。
+使用 Sileo 等越狱环境的包管理器打开对应 DEB 并安装。DEB 会一起安装桌面上的 MKS App、注入库及后台服务。巨魔商店只负责独立 IPA 的 App 安装，单装 IPA 缺少本插件和后台服务，完整功能请安装 DEB。
+
+安装前确认本环境的 ElleKit 可用；RootHide 包还依赖 RootHide 核心包。两个方案只选与当前环境匹配的一份。也可在该环境的 root shell 中执行对应命令，其中 `/path/to` 换成当前 shell 可访问的下载目录。
 
 ```sh
 # Rootless
-dpkg -i /path/to/mks_1.15_rootless_iphoneos-arm64.deb
+dpkg -i /path/to/mks_1.15.12_rootless_iphoneos-arm64.deb
 
 # RootHide bootstrap shell
-dpkg -i /path/to/mks_1.15_roothide_iphoneos-arm64e.deb
+dpkg -i /path/to/mks_1.15.12_roothide_iphoneos-arm64e.deb
 ```
 
 同一越狱环境可覆盖升级。安装脚本保留已有主配置、HTTP 状态和 Keychain 备份。首次安装时，当主配置不存在而原系统的 `/var/mobile/Media/mks.config` 存在，安装脚本会迁移这份旧配置。切换越狱环境后，两个安装根目录内的数据各自独立。需要先卸载旧包时，执行 `dpkg -r com.mks.spoof`，随后安装对应版本。
@@ -47,7 +49,9 @@ CLI 成功输出 JSON 且退出码为 0。
 
 ## 升级后进程刷新
 
-目标进程重新启动时会加载更新后的 dylib。桌面重启只刷新 SpringBoard。需要刷新 akd、accountsd、amsaccountsd、appstored 或 itunesstored 时，在没有登录或下载进行时重启相关进程，并核对 PID 已变更。
+1.15.12 RootHide 在“一键改机”和“恢复原机”时，会先按精确名称结束原来的 AppStore、akd、accountsd、amsaccountsd、appstored、itunesstored、lockdownd、itunescloudd、identityservicesd、adid、fairplayd.H2、storebookkeeperd，再重启 SpringBoard。检查原 PID 已退出后才报告刷新成功，可选进程不存在不算失败，权限或超时会报告失败。系统会按需重启服务。正常使用不需要手工 killall。
+
+Rootless 维持原刷新行为。覆盖安装本身保留原参数，执行改机/恢复后相应进程才会加载本轮配置和新版注入库；请在没有账户登录或下载进行时执行。
 
 一键改机和恢复原机均会重启桌面。Keychain 清理单独执行。HTTP 返回持久化任务编号，调用方需查询任务终态。
 
@@ -66,4 +70,6 @@ Rootless 使用 `/var/jb`。RootHide 在 bootstrap shell 中使用上表路径�
 
 恢复原机写入 `enabled:false` 配置。Keychain 清理后的备份与恢复是独立操作。[Keychain 文档](keychain-cleaner.md)
 
-1.15 的本机与真机升级检查见[验证记录](validation.md)。覆盖升级不自动重新生成参数；原来的停用/启用状态与配置继续保留。需要使用新生成规则时，通过既有一键改机入口显式执行。HTML 格式通过与 Apple 登录进程的属性一致性是独立的验收项。[参数规则](profile-rules.md) · [登录事件核查](login-incident.md)
+1.15.12 的主机与真机结果见[验证记录](validation.md)。覆盖升级不自动重新生成参数；原来的停用/启用状态与配置继续保留。需要使用新生成规则时，通过既有一键改机入口显式执行。RootHide 无双重认证账号已完成一次密码登录、重开保持与后台字段匹配；双重认证账号仍存在验证后未登录、需再次提交密码的问题。Rootless 没有本轮真机登录验收。[完整复测](roothide-login-compatibility.md)。
+
+历史版本 [1.15.4](https://github.com/Pet743/mks-ios-spoof/releases/tag/v1.15.4) 的标签与安装包继续保留。

@@ -148,6 +148,12 @@ NSDictionary *MKSGenerateProfile(void) {
     for(int i=0;i<10;i++) { NSString *s=[body stringByAppendingFormat:@"%d",i]; if(luhn(s)) { imei=s; break; } }
     NSString *sn=pick(@"ABCDEFGHJKLMNPQRSTUVWXYZ123456789",10), *wifi=mac();
     NSString *ecid=[@"0x" stringByAppendingString:pick(@"0123456789ABCDEF",16)];
+#if defined(MKS_ROOTHIDE)
+    // One published hardware/software tuple. Random identifiers remain fresh;
+    // independently invented boards, OS versions and builds do not describe a device.
+    NSString *chip=@"T8130", *board=@"D84AP", *part=@"MU773LL/A";
+    NSString *build=@"21A329", *version=@"17.0";
+#else
     NSString *chip=[NSString stringWithFormat:@"T%u",7000+arc4random_uniform(2000)];
     NSString *board=[NSString stringWithFormat:@"D%uAP",80+arc4random_uniform(10)];
     NSString *part=[NSString stringWithFormat:@"M%@%@%C%@LL/A",pick(@"ABCDEFGHJKLMNPQRSTUVWXYZ",1),
@@ -156,6 +162,7 @@ NSDictionary *MKSGenerateProfile(void) {
         [@"ABCDEFGHJKLMNPQRSTUVWXYZ" characterAtIndex:arc4random_uniform(24)],10+arc4random_uniform(90)];
     NSString *version=[NSString stringWithFormat:@"%u.%u.%u",16+arc4random_uniform(3),
         arc4random_uniform(10),arc4random_uniform(10)];
+#endif
     return @{@"schemaVersion":@2,@"enabled":@YES,@"name":[@"随机参数 " stringByAppendingString:sn],@"values":@{
         @"SerialNumber":sn,@"MLBSerialNumber":sn,
         @"InternationalMobileEquipmentIdentity":imei ?: @"000000000000000",@"InternationalMobileEquipmentIdentity2":body,
@@ -209,6 +216,24 @@ NSArray<NSString *> *MKSProfileHTMLRuleErrors(NSDictionary *profile) {
 }
 id MKSMGValue(NSDictionary *p, NSString *key) {
     if (![p[@"enabled"] boolValue]) return nil;
+#if defined(MKS_ROOTHIDE)
+    // DPP's internal MG hook explicitly passes ChipID through. AuthKit uses
+    // the native chip capability value; HardwarePlatform remains configurable.
+    if([@[@"ChipID",@"InternationalMobileEquipmentIdentity2",@"HardwareModel"] containsObject:key ?: @""]) return nil;
+    // DPP splits its legacy part number into the five-character model code
+    // and region suffix, and uses the third legacy field for MEID.
+    if([key isEqual:@"ModelNumber"]) {
+        NSString *part=p[@"values"][@"ModelNumber"];
+        return part.length>5?[part substringToIndex:5]:part;
+    }
+    if([key isEqual:@"MobileEquipmentIdentifier"])
+        return p[@"values"][@"MobileEquipmentIdentifier"] ?: p[@"values"][@"InternationalMobileEquipmentIdentity2"];
+    if([key isEqual:@"RegionInfo"] || [key isEqual:@"RegionCode"]) {
+        NSString *part=p[@"values"][@"ModelNumber"],*region=part.length>5?[part substringFromIndex:5]:nil;
+        if([key isEqual:@"RegionCode"] && region.length>=2)region=[region substringToIndex:2];
+        return p[@"values"][key] ?: region;
+    }
+#endif
     NSDictionary *v=p[@"values"];
     if([key isEqual:@"re6Zb+zwFKJNlkQTUeT+/w"]) return v[@"UniqueDeviceID"];
     if([key isEqual:@"h63QSdBCiT/z0WU6rdQv6Q"]) return v[@"RegionCode"];

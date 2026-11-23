@@ -1,15 +1,31 @@
 # MKS 改机
 
-自用 iOS 越狱工具，当前版本 **1.15**，提供 Rootless 和 RootHide 两个安装包。提供一键改机、恢复原机、全局 Keychain 清理，以及同一 Wi-Fi 内的 HTTP 调用。无卡密、激活或远程授权。
+**当前版本 1.15.12 / 128：** 无双重认证测试账号已按“确认退出 → MKS 正常改机 → 一次密码登录 → 重开保持”完成，用户后台核对机型、系统及 IMEI 一致。双重认证账号仍存在验证返回后未登录、需要再次提交密码的问题，本版没有宣称解决这一流程。v1.15.4 原始标签与安装包保留。[完整验收与已知问题](docs/roothide-login-compatibility.md)。
+
+[下载 1.15.12](https://github.com/Pet743/mks-ios-spoof/releases/tag/v1.15.12) · [安装说明](docs/install.md) · [DPP 对照与复测记录](docs/roothide-login-compatibility.md)。
+
+自用 iOS 越狱工具，当前发布版本 **1.15.12**，提供 Rootless 和 RootHide 两个安装包。提供一键改机、恢复原机、全局 Keychain 清理，以及同一 Wi-Fi 内的 HTTP 调用。无卡密、激活或远程授权。
 
 | 越狱环境 | DEB 架构 | 下载 |
 | --- | --- | --- |
-| Rootless（固定 `/var/jb`） | `iphoneos-arm64` | [Rootless DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.15/mks_1.15_rootless_iphoneos-arm64.deb) |
-| RootHide（RootHide bootstrap + ElleKit） | `iphoneos-arm64e` | [RootHide DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.15/mks_1.15_roothide_iphoneos-arm64e.deb) |
+| Rootless（固定 `/var/jb`） | `iphoneos-arm64` | [Rootless DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.15.12/mks_1.15.12_rootless_iphoneos-arm64.deb) |
+| RootHide（RootHide bootstrap + ElleKit） | `iphoneos-arm64e` | [RootHide DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.15.12/mks_1.15.12_roothide_iphoneos-arm64e.deb) |
+
+## 1.15.12 更新
+
+RootHide 改机/恢复时自动刷新认证和商店服务，再重启桌面，避免只重启桌面后仍使用上一轮进程缓存；生成器使用对应的 iPhone 15 Pro Max / iOS 17.0 / build 21A329 元组；IOKit Search 白名单以外的字段保留原生值，并对照 DPP 增加原始 MG 初始化读取。Rootless 原有生成、刷新和 hook 行为保留。
+
+本轮 RootHide 无双重认证账号已通过实际登录、重开保持及后台可见字段核对。Rootless 完成构建与主机检查，未做本轮真机登录验收；双重认证账号的问题见上文。安装包与手机已测试的 1.15.12 产物相同。
+
+## 1.15.4：已保留的 RootHide 验收版本
+
+2026-11-23 在改机启用时完成一次密码提交及双重认证，App Store 登录成功，关闭并重开后仍保持登录；用户提供的 Apple 后台设备详情中，机型、序列号和系统版本与该轮随机参数逐项一致。该结果满足本次约定的验收条件。
+
+RootHide 包仅排除 akd 的直接注入，保留 AppStore、accountsd、amsaccountsd、appstored、itunesstored 的身份替换；Rootless 保持原有过滤范围。版本 **1.15.4 / 120** 固定保存这一行为；后续 DPP 对齐工作另行迭代。[验收与历史候选](docs/roothide-login-investigation.md) · [DPP 功能差异](docs/dpp-parity.md) · [保留版本下载](https://github.com/Pet743/mks-ios-spoof/releases/tag/v1.15.4)。
 
 ## 使用
 
-安装与越狱环境对应的完整 DEB 后，打开 MKS：
+使用 Sileo 等越狱包管理器安装与环境对应的完整 DEB，依赖为本环境的 ElleKit；RootHide 还需要 RootHide 核心包。DEB 包含 MKS App、注入库和后台服务，安装后打开桌面的 MKS。巨魔商店单装独立 IPA 缺少注入库和后台服务，完整功能需要安装 DEB。[具体步骤](docs/install.md)。
 
 - **一键改机**：生成并保存参数，然后自动重启桌面，手机短暂黑屏。
 - **恢复原机**：写入停用配置，然后自动重启桌面。
@@ -22,7 +38,7 @@ HTTP 默认端口 `33237`，路径前缀 `/v1/devices/{USB_UDID}`。改机不会
 
 一键改机默认生成 iPhone 15 Pro Max（`iPhone16,2`）、美国地区参数，遵循本地 HTML 的 14 段格式规则；App 展示校验结果、可复制参数行与 JSON。App 和 HTTP daemon 保存新生成参数前均执行校验，失败时不写入、不重启桌面。旧配置继续兼容读取，覆盖升级保留原有参数。
 
-这些检查验证字符串格式及部分字段关系；随机机型、主板、芯片、iOS 与 build 不代表真实硬件组合，也不是 Apple 认证。1.15 没有修改 Apple 登录进程的注入和缓存逻辑。本轮刷新六个目标进程后，218 项 API 读数匹配配置、330 项恢复比对一致；原事件和实际 Apple 登录请求仍待复现。[参数规则](docs/profile-rules.md) · [登录事件核查结论](docs/login-incident.md)
+这些检查验证字符串格式及部分字段关系；随机机型、主板、芯片、iOS 与 build 不代表真实硬件组合，也不是 Apple 认证。1.15 没有修改 Apple 登录进程的注入和缓存逻辑。1.15 当时刷新六个目标进程后，218 项 API 读数匹配配置、330 项恢复比对一致；1.15.4 的实际登录及后台核对见上文。[参数规则](docs/profile-rules.md) · [登录事件核查结论](docs/login-incident.md)
 
 ## 1.14.1 真机修正
 

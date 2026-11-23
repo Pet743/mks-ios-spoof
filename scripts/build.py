@@ -168,6 +168,26 @@ exit 0
     ]
 
 
+def tweak_filter(scheme):
+    payload = (ROOT / 'tweak/mks.plist').read_bytes()
+    if scheme == 'rootless':
+        return payload
+    if scheme != 'roothide':
+        raise ValueError(f'Unknown scheme: {scheme}')
+    # Match DPP's runtime-enabled filter (daemon 0x10000c438), including UIKit
+    # hosts, rather than assuming the package's initial filter is final.
+    info = {'Filter': {
+        'Bundles': ['com.apple.UIKit', 'com.apple.AppStore'],
+        'Executables': [
+            'SpringBoard', 'ptpd', 'lsd', 'appstored', 'atc', 'CommCenter',
+            'adid', 'homed', 'itunesstored', 'cloudd', 'familycircled',
+            'storebookkeeperd', 'itunescloudd', 'identityservicesd', 'absd',
+            'fairplayd.H2', 'SIMSetupUIService', 'accountsd', 'akd', 'lockdownd',
+        ],
+    }}
+    return plistlib.dumps(info)
+
+
 def build_device(scheme, ipa):
     architecture, prefix = SCHEMES[scheme]
     roothide = scheme == 'roothide'
@@ -185,7 +205,8 @@ def build_device(scheme, ipa):
     run(flags + ['-fobjc-arc', '-dynamiclib', 'tweak/mks.m', 'common/MKSProfile.m',
                  '-framework', 'Foundation', *link, f'-Wl,-install_name,{install_name}', '-o', dylib])
     run(flags + ['-c', 'daemon/mksd.c', '-o', build / 'mksd.o'])
-    run(flags + ['-fobjc-arc', build / 'mksd.o', 'daemon/MKSStatus.m', 'daemon/MKSKeychainService.m',
+    refresh = ['daemon/MKSProcessRefresh.c', '-lproc'] if roothide else []
+    run(flags + ['-fobjc-arc', build / 'mksd.o', *refresh, 'daemon/MKSStatus.m', 'daemon/MKSKeychainService.m',
                  'daemon/MKSOperations.m', 'daemon/MKSHTTPServer.m', 'daemon/MKSSetup.m', 'common/MKSHTTP.m',
                  'common/MKSProfile.m', 'common/MKSKeychain.m', 'common/MKSKeychainIPC.m',
                  '-framework', 'Foundation', '-lsqlite3', *link, '-o', daemon])
@@ -224,7 +245,7 @@ def build_device(scheme, ipa):
             launch_plist[key] = '/rootfs' + launch_plist[key]
     files += [
         ((prefix + f'{TWEAK_DIR}/mks.dylib').lstrip('/'), dylib.read_bytes(), 0o755),
-        ((prefix + f'{TWEAK_DIR}/mks.plist').lstrip('/'), (ROOT / 'tweak/mks.plist').read_bytes(), 0o644),
+        ((prefix + f'{TWEAK_DIR}/mks.plist').lstrip('/'), tweak_filter(scheme), 0o644),
         ((prefix + '/usr/libexec/mksd').lstrip('/'), daemon.read_bytes(), 0o755),
         ((prefix + DAEMON_PLIST).lstrip('/'), plistlib.dumps(launch_plist), 0o644),
     ]
