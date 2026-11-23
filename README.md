@@ -1,15 +1,21 @@
 # MKS 改机
 
-**1.15.12 候选结果：** 无双重认证测试账号已按“确认退出 → MKS 正常改机 → 一次密码登录 → 重开保持”完成，用户后台核对机型、系统及 IMEI 一致。双重认证账号仍在验证返回后未登录，同一身份再次提交密码才成功，故尚不作为通用登录修复 Release。v1.15.4 原始标签与安装包保留。[兼容性与完整证据](docs/roothide-login-compatibility.md)。
+**当前版本 1.15.12 / 128：** 无双重认证测试账号已按“确认退出 → MKS 正常改机 → 一次密码登录 → 重开保持”完成，用户后台核对机型、系统及 IMEI 一致。双重认证账号仍存在验证返回后未登录、需要再次提交密码的问题，本版没有宣称解决这一流程。v1.15.4 原始标签与安装包保留。[完整验收与已知问题](docs/roothide-login-compatibility.md)。
 
-[后续兼容性候选与 DPP 运行时分析](docs/roothide-login-compatibility.md)：仍按后台设备匹配验收，尚未生成新修复 Release。
+[下载 1.15.12](https://github.com/Pet743/mks-ios-spoof/releases/tag/v1.15.12) · [安装说明](docs/install.md) · [DPP 对照与复测记录](docs/roothide-login-compatibility.md)。
 
-自用 iOS 越狱工具，当前保留版本 **1.15.4**，提供 Rootless 和 RootHide 两个安装包。提供一键改机、恢复原机、全局 Keychain 清理，以及同一 Wi-Fi 内的 HTTP 调用。无卡密、激活或远程授权。
+自用 iOS 越狱工具，当前发布版本 **1.15.12**，提供 Rootless 和 RootHide 两个安装包。提供一键改机、恢复原机、全局 Keychain 清理，以及同一 Wi-Fi 内的 HTTP 调用。无卡密、激活或远程授权。
 
 | 越狱环境 | DEB 架构 | 下载 |
 | --- | --- | --- |
-| Rootless（固定 `/var/jb`） | `iphoneos-arm64` | [Rootless DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.15.4/mks_1.15.4_rootless_iphoneos-arm64.deb) |
-| RootHide（RootHide bootstrap + ElleKit） | `iphoneos-arm64e` | [RootHide DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.15.4/mks_1.15.4_roothide_iphoneos-arm64e.deb) |
+| Rootless（固定 `/var/jb`） | `iphoneos-arm64` | [Rootless DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.15.12/mks_1.15.12_rootless_iphoneos-arm64.deb) |
+| RootHide（RootHide bootstrap + ElleKit） | `iphoneos-arm64e` | [RootHide DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.15.12/mks_1.15.12_roothide_iphoneos-arm64e.deb) |
+
+## 1.15.12 更新
+
+RootHide 改机/恢复时自动刷新认证和商店服务，再重启桌面，避免只重启桌面后仍使用上一轮进程缓存；生成器使用对应的 iPhone 15 Pro Max / iOS 17.0 / build 21A329 元组；IOKit Search 白名单以外的字段保留原生值，并对照 DPP 增加原始 MG 初始化读取。Rootless 原有生成、刷新和 hook 行为保留。
+
+本轮 RootHide 无双重认证账号已通过实际登录、重开保持及后台可见字段核对。Rootless 完成构建与主机检查，未做本轮真机登录验收；双重认证账号的问题见上文。安装包与手机已测试的 1.15.12 产物相同。
 
 ## 1.15.4：已保留的 RootHide 验收版本
 
@@ -19,7 +25,7 @@ RootHide 包仅排除 akd 的直接注入，保留 AppStore、accountsd、amsacc
 
 ## 使用
 
-安装与越狱环境对应的完整 DEB 后，打开 MKS：
+使用 Sileo 等越狱包管理器安装与环境对应的完整 DEB，依赖为本环境的 ElleKit；RootHide 还需要 RootHide 核心包。DEB 包含 MKS App、注入库和后台服务，安装后打开桌面的 MKS。巨魔商店单装独立 IPA 缺少注入库和后台服务，完整功能需要安装 DEB。[具体步骤](docs/install.md)。
 
 - **一键改机**：生成并保存参数，然后自动重启桌面，手机短暂黑屏。
 - **恢复原机**：写入停用配置，然后自动重启桌面。

@@ -1,5 +1,13 @@
 # MKS 1.15 参数生成与 HTML 规则
 
+## 1.15.12 RootHide 更新
+
+RootHide 新生成参数使用对应的固定元组：iPhone 15 Pro Max / `iPhone16,2` / `D84AP` / `T8130` / `MU773LL/A` / iOS `17.0` / build `21A329`。序列号、IMEI、ECID、UDID、MAC 等仍逐次生成；字段格式和 14 段导出保持兼容。已有配置在覆盖升级时原样保留，需点击“一键改机”才生成新参数。
+
+Rootless 保留下文 1.15 的生成行为。RootHide 的 ChipID、第二 IMEI、HardwareModel 保留原生读取，ModelNumber 按前五位型号与地区拆分，MEID 可回退到旧格式第三段；因此“配置字符串存在”不等于每个进程都使用该字符串。完整字段与登录结果见[兼容性记录](roothide-login-compatibility.md)。
+
+以下表格记录历史 1.15 默认规则；机型、主板、芯片、版本及构建号的独立随机方式仅在 Rootless 继续使用。
+
 1.15 将新生成参数对齐本地参考 HTML 的默认机型和地区。App 与 HTTP daemon 在保存前使用同一个规则检查器；App「当前参数」显示检查结果、14 段参数行与 JSON。检查通过表示符合本地格式规则，不表示真实硬件、Apple 认证或登录所用属性已全部替换。
 
 ## 默认值与字段顺序
