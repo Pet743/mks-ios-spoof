@@ -2,7 +2,7 @@
 
 **当前版本 1.15.12 / 128：** 无双重认证测试账号已按“确认退出 → MKS 正常改机 → 一次密码登录 → 重开保持”完成，用户后台核对机型、系统及 IMEI 一致。双重认证账号仍存在验证返回后未登录、需要再次提交密码的问题，本版没有宣称解决这一流程。v1.15.4 原始标签与安装包保留。[完整验收与已知问题](docs/roothide-login-compatibility.md)。
 
-[下载 1.15.12](https://github.com/Pet743/mks-ios-spoof/releases/tag/v1.15.12) · [安装说明](docs/install.md) · [DPP 对照与复测记录](docs/roothide-login-compatibility.md)。
+[下载最新版](https://github.com/Pet743/mks-ios-spoof/releases/latest) · [安装说明](docs/install.md) · [新设备：Mac + USB 快速安装 RootHide](docs/install-usb-roothide.md) · [DPP 对照与复测记录](docs/roothide-login-compatibility.md)。
 
 自用 iOS 越狱工具，当前发布版本 **1.15.12**，提供 Rootless 和 RootHide 两个安装包。提供一键改机、恢复原机、全局 Keychain 清理，以及同一 Wi-Fi 内的 HTTP 调用。无卡密、激活或远程授权。
 

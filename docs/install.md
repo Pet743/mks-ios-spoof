@@ -1,11 +1,27 @@
 # MKS 1.15.12 安装与升级
 
+## 新设备快速开始
+
+**RootHide + Mac + USB：** 按[USB 快速安装指南](install-usb-roothide.md)操作。指南包含自动选择最新正式版、校验 SHA-256、USB 传包、SSH 安装、绑定设备编号和安装后检查；RootHide Dopamine 设备也适用，不要求手机上存在单独的 Bootstrap App。
+
+直接在手机安装时：
+
+1. 确认手机已进入相应越狱环境，Sileo 能正常打开，已安装该环境的 ElleKit；RootHide 还需核心包 `roothide`。
+2. 打开[最新正式版](https://github.com/Pet743/mks-ios-spoof/releases/latest)，选择下表对应的完整 DEB，用 Sileo 安装。
+3. 安装后打开桌面的「MKS 改机」，核对 App 版本与所选 Release 一致。
+4. 需要 HTTP 对接时，先用电脑读取真实 USB UDID，再通过 App 的「接口文档」绑定；不要填写改机参数中的随机 UDID。
+5. 需要立即使用新参数时，执行一次「一键改机」，等待桌面重启，再打开 MKS 检查启用状态与参数。安装或升级本身不会自动改机。
+
+新设备通常通过包管理器安装即可。OpenSSH 是电脑远程安装时的通道，ZXTouch 是可选的触控自动化工具，Python 用于相应自动化脚本；后三者均不是 MKS 本身的依赖。
+
+## 选择安装包
+
 按越狱环境选择一份 DEB。两个包均包含 App、注入库、daemon、Keychain 清理与 HTTP 服务。
 
 | 越狱环境 | 依赖 | 安装包 |
 | --- | --- | --- |
 | Rootless，越狱根目录是 `/var/jb` | ElleKit | [mks_1.15.12_rootless_iphoneos-arm64.deb](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.15.12/mks_1.15.12_rootless_iphoneos-arm64.deb) |
-| RootHide，使用自己的 bootstrap 根目录 | RootHide 核心包及该环境的 ElleKit | [mks_1.15.12_roothide_iphoneos-arm64e.deb](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.15.12/mks_1.15.12_roothide_iphoneos-arm64e.deb) |
+| RootHide，包括 RootHide Dopamine，使用动态越狱根目录 | RootHide 核心包及该环境的 ElleKit | [mks_1.15.12_roothide_iphoneos-arm64e.deb](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.15.12/mks_1.15.12_roothide_iphoneos-arm64e.deb) |
 
 使用 Sileo 等越狱环境的包管理器打开对应 DEB 并安装。DEB 会一起安装桌面上的 MKS App、注入库及后台服务。巨魔商店只负责独立 IPA 的 App 安装，单装 IPA 缺少本插件和后台服务，完整功能请安装 DEB。
 
@@ -19,7 +35,11 @@ dpkg -i /path/to/mks_1.15.12_rootless_iphoneos-arm64.deb
 dpkg -i /path/to/mks_1.15.12_roothide_iphoneos-arm64e.deb
 ```
 
-同一越狱环境可覆盖升级。安装脚本保留已有主配置、HTTP 状态和 Keychain 备份。首次安装时，当主配置不存在而原系统的 `/var/mobile/Media/mks.config` 存在，安装脚本会迁移这份旧配置。切换越狱环境后，两个安装根目录内的数据各自独立。需要先卸载旧包时，执行 `dpkg -r com.mks.spoof`，随后安装对应版本。
+## 已有旧版本如何升级
+
+同一越狱环境直接覆盖升级，通常无需先卸载旧版。App、注入库和后台服务由同一个 `com.mks.spoof` DEB 更新。安装脚本保留已有主配置、HTTP 状态和 Keychain 备份；保留下来的旧参数不表示仍在运行旧版程序。可按 USB 指南分别核对包版本、App 版本和后台服务，再显式改机生成新参数。
+
+首次安装时，当主配置不存在而原系统的 `/var/mobile/Media/mks.config` 存在，安装脚本会迁移这份旧配置。切换越狱环境后，两个安装根目录内的数据各自独立。确需先移除旧包时，使用 Sileo 卸载或执行 `dpkg -r com.mks.spoof`；仅删除桌面图标不能代替核对 `dpkg` 包状态。随后安装对应版本。升级前的配置备份及回退步骤见 [USB 指南](install-usb-roothide.md#备份与回退)。
 
 设备 Bundle ID 为 `com.mks.spoofer`。使用完整功能时，应从 DEB 注册的 App 进入；如果同时保留了相同 Bundle ID 的独立 IPA，先删除独立安装的 App。守护进程和插件随 DEB 一同更新。
 
