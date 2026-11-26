@@ -174,15 +174,16 @@ def tweak_filter(scheme):
         return payload
     if scheme != 'roothide':
         raise ValueError(f'Unknown scheme: {scheme}')
-    # Match DPP's runtime-enabled filter (daemon 0x10000c438), including UIKit
-    # hosts, rather than assuming the package's initial filter is final.
+    # Retain the commerce/UIKit scope. USB pairing must keep native identity.
     info = {'Filter': {
         'Bundles': ['com.apple.UIKit', 'com.apple.AppStore'],
         'Executables': [
             'SpringBoard', 'ptpd', 'lsd', 'appstored', 'atc', 'CommCenter',
             'adid', 'homed', 'itunesstored', 'cloudd', 'familycircled',
             'storebookkeeperd', 'itunescloudd', 'identityservicesd', 'absd',
-            'fairplayd.H2', 'SIMSetupUIService', 'accountsd', 'akd', 'lockdownd',
+            'fairplayd.H2', 'SIMSetupUIService', 'accountsd', 'akd',
+            # StoreKit purchases run outside the App Store/UIKit processes.
+            'storekitd',
         ],
     }}
     return plistlib.dumps(info)

@@ -38,7 +38,7 @@ def main():
     build.run(['codesign', '--verify', '--strict', library])
     path = output / 'MKSVerify.plist'
     path.write_bytes(plistlib.dumps({'Filter': {'Executables': [
-        'AppStore', 'akd', 'accountsd', 'amsaccountsd', 'appstored', 'itunesstored',
+        'AppStore', 'akd', 'accountsd', 'amsaccountsd', 'appstored', 'itunesstored', 'storekitd',
     ]}}))
     print(f'PROBE {scheme} arm64 arm64e signature=verified')
     print(library)

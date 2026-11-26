@@ -8,8 +8,9 @@
 static int target(const char *name) {
     static const char *names[] = {
         "AppStore", "akd", "accountsd", "amsaccountsd", "appstored",
-        "itunesstored", "lockdownd", "itunescloudd", "identityservicesd",
-        "adid", "fairplayd.H2", "storebookkeeperd", NULL
+        // lockdownd owns paired USB sessions and is deliberately left running.
+        "itunesstored", "itunescloudd", "identityservicesd",
+        "adid", "fairplayd.H2", "storebookkeeperd", "storekitd", NULL
     };
     for (unsigned i=0; names[i]; i++) if (!strcmp(name,names[i])) return 1;
     return 0;

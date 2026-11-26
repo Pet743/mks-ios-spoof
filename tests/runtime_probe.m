@@ -67,6 +67,20 @@ static void sample(NSDictionary *profile,NSError *readError,BOOL readable) {
         id actual=sys(key.UTF8String,buffer,&length,NULL,0)==0?[NSString stringWithUTF8String:buffer]:nil;
         answer(phase,@"sysctlbyname",key,actual,MKSMGValue(profile,syskeys[key]));
     }
+    int (*sysMIB)(int *,u_int,void *,size_t *,void *,size_t)=dlsym(RTLD_DEFAULT,"sysctl");
+    if (sysMIB) {
+        int mib[]={CTL_HW,HW_MACHINE};char buffer[512]={0};size_t length=sizeof(buffer);
+        id actual=sysMIB(mib,2,buffer,&length,NULL,0)==0?[NSString stringWithUTF8String:buffer]:nil;
+        answer(phase,@"sysctl",@"hw.machine",actual,MKSMGValue(profile,@"ProductType"));
+    }
+    CFDictionaryRef (*systemVersion)(void)=dlsym(RTLD_DEFAULT,"_CFCopySystemVersionDictionary");
+    if (systemVersion) {
+        CFDictionaryRef value=systemVersion();
+        NSDictionary *version=(__bridge NSDictionary *)value;
+        answer(phase,@"systemVersion",@"ProductVersion",version[@"ProductVersion"],MKSMGValue(profile,@"ProductVersion"));
+        answer(phase,@"systemVersion",@"ProductBuildVersion",version[@"ProductBuildVersion"],MKSMGValue(profile,@"BuildVersion"));
+        if (value) CFRelease(value);
+    }
     CFMutableDictionaryRef (*matching)(const char *)=dlsym(RTLD_DEFAULT,"IOServiceMatching");
     IOEntry (*service)(uint32_t,CFDictionaryRef)=dlsym(RTLD_DEFAULT,"IOServiceGetMatchingService");
     int (*release)(IOEntry)=dlsym(RTLD_DEFAULT,"IOObjectRelease");

@@ -1,5 +1,9 @@
 # MKS 改机
 
+**本地候选 1.15.14 / 130：** 修复 RootHide 原机切换改机后的 USB 配对失效，配对服务保留原生身份且不再随改机刷新。真实 iOS 16.4.1 三轮改机/还原、18 次配对/AFC 检查通过，StoreKit 153 项读数匹配；主界面新增版本号和构建号。[修复与验收](docs/usb-trust-fix.md)。
+
+**本地候选 1.15.13 / 129：** 修正 RootHide 应用内购买服务 `storekitd` 的注入、刷新及身份读取覆盖。真机进程内采样通过，实际付款后台判定待原应用复测。[现场及验证记录](docs/storekit-payment-investigation.md)。以下 1.15.12 为原发布记录。
+
 **当前版本 1.15.12 / 128：** 无双重认证测试账号已按“确认退出 → MKS 正常改机 → 一次密码登录 → 重开保持”完成，用户后台核对机型、系统及 IMEI 一致。双重认证账号仍存在验证返回后未登录、需要再次提交密码的问题，本版没有宣称解决这一流程。v1.15.4 原始标签与安装包保留。[完整验收与已知问题](docs/roothide-login-compatibility.md)。
 
 [下载最新版](https://github.com/Pet743/mks-ios-spoof/releases/latest) · [安装说明](docs/install.md) · [新设备：Mac + USB 快速安装 RootHide](docs/install-usb-roothide.md) · [DPP 对照与复测记录](docs/roothide-login-compatibility.md)。

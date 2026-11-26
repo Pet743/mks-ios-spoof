@@ -38,6 +38,29 @@ static void do_respring(void) {
     self.navigationController.overrideUserInterfaceStyle=UIUserInterfaceStyleDark;
     self.view.backgroundColor = [UIColor colorWithWhite:0.06 alpha:1];
     self.title = @"MKS 改机";
+    UILabel *titleLabel=[UILabel new];
+    titleLabel.text=self.title;
+    titleLabel.font=[UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+    titleLabel.textColor=UIColor.labelColor;
+    titleLabel.textAlignment=NSTextAlignmentCenter;
+    titleLabel.adjustsFontForContentSizeCategory=YES;
+    NSDictionary *bundleInfo=NSBundle.mainBundle.infoDictionary;
+    UILabel *versionLabel=[UILabel new];
+    versionLabel.text=[NSString stringWithFormat:@"v%@ · %@",
+        bundleInfo[@"CFBundleShortVersionString"] ?: @"—",bundleInfo[@"CFBundleVersion"] ?: @"—"];
+    versionLabel.font=[UIFont preferredFontForTextStyle:UIFontTextStyleCaption1];
+    versionLabel.textColor=UIColor.secondaryLabelColor;
+    versionLabel.textAlignment=NSTextAlignmentCenter;
+    versionLabel.adjustsFontForContentSizeCategory=YES;
+    versionLabel.accessibilityIdentifier=@"mks.appVersion";
+    versionLabel.accessibilityLabel=[NSString stringWithFormat:@"版本 %@，构建号 %@",
+        bundleInfo[@"CFBundleShortVersionString"] ?: @"未知",bundleInfo[@"CFBundleVersion"] ?: @"未知"];
+    UIStackView *titleStack=[[UIStackView alloc] initWithArrangedSubviews:@[titleLabel,versionLabel]];
+    titleStack.axis=UILayoutConstraintAxisVertical;
+    titleStack.alignment=UIStackViewAlignmentCenter;
+    titleStack.spacing=0;
+    [titleStack sizeToFit];
+    self.navigationItem.titleView=titleStack;
     self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"接口文档" style:UIBarButtonItemStylePlain target:self action:@selector(openAPIDocs)];
 
     self.status = [[UILabel alloc] initWithFrame:CGRectMake(20, 100, self.view.bounds.size.width - 40, 30)];

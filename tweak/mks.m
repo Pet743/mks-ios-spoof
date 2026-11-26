@@ -2,6 +2,7 @@
 #import "../common/MKSProfile.h"
 #include "../common/MKSBranch.h"
 #include "../common/MKSPaths.h"
+#include "../common/MKSProcessPolicy.h"
 #import <objc/runtime.h>
 #import <objc/message.h>
 #include <dlfcn.h>
@@ -17,6 +18,13 @@ typedef uint32_t io_registry_entry_t;
 typedef uint32_t IOOptionBits;
 static __thread unsigned int readingProfile;
 static MKSProfileStore *store;
+#if defined(MKS_ROOTHIDE)
+static BOOL storeKitIdentityReads;
+static BOOL storeKitRegistryKey(CFStringRef key) {
+    return storeKitIdentityReads && key &&
+        (CFEqual(key,CFSTR("IOPlatformUUID")) || CFEqual(key,CFSTR("serial-number")));
+}
+#endif
 static NSDictionary *currentProfile(void) {
     if (readingProfile) return nil;
     readingProfile++;
@@ -108,6 +116,11 @@ static CFTypeRef my_MGCopyAnswerInternal(CFStringRef key,uint32_t *answerType) {
 static CFTypeRef (*orig_IORegistryEntryCreateCFProperty)(io_registry_entry_t,CFStringRef,CFAllocatorRef,IOOptionBits);
 static CFTypeRef __attribute__((unused)) my_IORegistryEntryCreateCFProperty(io_registry_entry_t entry,CFStringRef key,CFAllocatorRef alloc,IOOptionBits options) {
     CFTypeRef original=orig_IORegistryEntryCreateCFProperty?orig_IORegistryEntryCreateCFProperty(entry,key,alloc,options):NULL;
+#if defined(MKS_ROOTHIDE)
+    // Only StoreKit's UUID and serial properties use this additional path.
+    // In particular board-id keeps its native binary representation.
+    if (!storeKitRegistryKey(key)) return original;
+#endif
     @autoreleasepool {
         id value=key?MKSRegistryValue(currentProfile(),(__bridge NSString *)key,(__bridge id)original):nil;
         if (!value) return original;
@@ -132,10 +145,16 @@ static CFTypeRef my_IORegistryEntrySearchCFProperty(io_registry_entry_t entry,co
 #endif
     CFTypeRef original=orig_IORegistryEntrySearchCFProperty?orig_IORegistryEntrySearchCFProperty(entry,plane,key,alloc,options):NULL;
 #if defined(MKS_ROOTHIDE)
-    // Every property outside the explicit Search whitelist stays native.
-    // The shared Rootless mapper also knows board-id/UUID/serial-number, but
-    // applying those here would extend the RootHide whitelist after all.
-    return original;
+    // Other RootHide processes retain their original whitelist. StoreKit adds
+    // UUID/serial only after a native property exists; board-id stays native.
+    if (!storeKitRegistryKey(key)) return original;
+    @autoreleasepool {
+        id value=MKSRegistryValue(currentProfile(),(__bridge NSString *)key,(__bridge id)original);
+        if (!value) return original;
+        CFTypeRef result=CFBridgingRetain(value);
+        if (original) CFRelease(original);
+        return result;
+    }
 #else
     @autoreleasepool {
         id value=key?MKSRegistryValue(currentProfile(),(__bridge NSString *)key,(__bridge id)original):nil;
@@ -236,6 +255,14 @@ static int __attribute__((unused)) my_sysctl(int *name,u_int count,void *out,siz
     return orig_sysctl?orig_sysctl(name,count,out,len,newp,newlen):-1;
 }
 
+#if defined(MKS_ROOTHIDE)
+static BOOL useStoreKitIdentityReads(NSString *processName) {
+    // Keep the verified authentication-process behavior. Expose matching
+    // String, sysctl and system-version answers only in the purchase daemon.
+    return [processName isEqualToString:@"storekitd"];
+}
+#endif
+
 #ifndef MKS_UNIT_TEST
 typedef void (*HookFunction)(void *,void *,void **);
 typedef void (*HookMessage)(Class,SEL,IMP,IMP *);
@@ -284,6 +311,7 @@ static void onImageLoaded(const struct mach_header *header,intptr_t slide) {
 }
 __attribute__((constructor)) static void mks_init(void) {
     @autoreleasepool {
+        if (!MKSShouldInstallIdentityHooks(NSProcessInfo.processInfo.processName.UTF8String)) return;
         store=[[MKSProfileStore alloc] initWithPaths:MKSConfigPaths()];
         void *framework=dlopen(MKS_JB_PATH("/usr/lib/libellekit.dylib"),RTLD_NOW|RTLD_GLOBAL);
         if(!framework) framework=dlopen(MKS_JB_PATH("/usr/lib/libsubstrate.dylib"),RTLD_NOW|RTLD_GLOBAL);
@@ -292,25 +320,26 @@ __attribute__((constructor)) static void mks_init(void) {
         if(!install) { NSLog(@"MKS: hook framework unavailable; no hooks installed"); return; }
         dlopen("/usr/lib/libMobileGestalt.dylib",RTLD_LAZY|RTLD_GLOBAL);
         dlopen("/System/Library/Frameworks/IOKit.framework/IOKit",RTLD_LAZY|RTLD_GLOBAL);
-#if !defined(MKS_ROOTHIDE)
-        hook(install,"MGGetStringAnswer",(void *)my_MGGetStringAnswer,(void **)&orig_MGGetStringAnswer);
+#if defined(MKS_ROOTHIDE)
+        BOOL extendedIdentityReads=storeKitIdentityReads=useStoreKitIdentityReads(NSProcessInfo.processInfo.processName);
+#else
+        BOOL extendedIdentityReads=YES;
 #endif
+        if (extendedIdentityReads)
+            hook(install,"MGGetStringAnswer",(void *)my_MGGetStringAnswer,(void **)&orig_MGGetStringAnswer);
         hookMG(install);
 #if defined(MKS_ROOTHIDE)
         primeNativeIdentityCache();
 #endif
-#if !defined(MKS_ROOTHIDE)
-        hook(install,"IORegistryEntryCreateCFProperty",(void *)my_IORegistryEntryCreateCFProperty,(void **)&orig_IORegistryEntryCreateCFProperty);
-#endif
+        if (extendedIdentityReads)
+            hook(install,"IORegistryEntryCreateCFProperty",(void *)my_IORegistryEntryCreateCFProperty,(void **)&orig_IORegistryEntryCreateCFProperty);
         hook(install,"IORegistryEntrySearchCFProperty",(void *)my_IORegistryEntrySearchCFProperty,(void **)&orig_IORegistryEntrySearchCFProperty);
-#if defined(MKS_ROOTHIDE)
-        if([NSProcessInfo.processInfo.processName isEqual:@"Preferences"])
+        if(extendedIdentityReads || [NSProcessInfo.processInfo.processName isEqual:@"Preferences"])
             hook(install,"_CFCopySystemVersionDictionary",(void *)my_CFCopySystemVersionDictionary,(void **)&orig_CFCopySystemVersionDictionary);
-#else
-        hook(install,"_CFCopySystemVersionDictionary",(void *)my_CFCopySystemVersionDictionary,(void **)&orig_CFCopySystemVersionDictionary);
-        hook(install,"sysctlbyname",(void *)my_sysctlbyname,(void **)&orig_sysctlbyname);
-        hook(install,"sysctl",(void *)my_sysctl,(void **)&orig_sysctl);
-#endif
+        if(extendedIdentityReads) {
+            hook(install,"sysctlbyname",(void *)my_sysctlbyname,(void **)&orig_sysctlbyname);
+            hook(install,"sysctl",(void *)my_sysctl,(void **)&orig_sysctl);
+        }
 #if !defined(MKS_ROOTHIDE)
         Class device=objc_getClass("UIDevice");
         SEL idfv=sel_registerName("identifierForVendor");
@@ -323,7 +352,7 @@ __attribute__((constructor)) static void mks_init(void) {
         installPrivateGetters(message);
         privateMessageInstaller=message;
         _dyld_register_func_for_add_image(onImageLoaded);
-        NSLog(@"MKS 1.15.12: MG=%d/%d IO=%d/%d sysctl=%d/%d",orig_MGCopyAnswer!=NULL || orig_MGCopyAnswerInternal!=NULL,orig_MGGetStringAnswer!=NULL,
+        NSLog(@"MKS 1.15.14: MG=%d/%d IO=%d/%d sysctl=%d/%d",orig_MGCopyAnswer!=NULL || orig_MGCopyAnswerInternal!=NULL,orig_MGGetStringAnswer!=NULL,
             orig_IORegistryEntryCreateCFProperty!=NULL,orig_IORegistryEntrySearchCFProperty!=NULL,orig_sysctl!=NULL,orig_sysctlbyname!=NULL);
     }
 }

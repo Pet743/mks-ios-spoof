@@ -23,12 +23,32 @@ static CFTypeRef presentSearch(io_registry_entry_t entry,const char *plane,CFStr
     if(CFEqual(key,CFSTR("IOPlatformUUID")))return CFBridgingRetain(@"12345678-1234-1234-1234-123456789ABC");
     const uint8_t bytes[]={0x10,0x20,0x30,0x40};return CFDataCreate(NULL,bytes,sizeof(bytes));
 }
+static CFTypeRef presentCreate(io_registry_entry_t entry,CFStringRef key,CFAllocatorRef allocator,IOOptionBits options) {
+    return presentSearch(entry,NULL,key,allocator,options);
+}
+static CFStringRef nativeString(CFStringRef key) {
+    (void)key;return CFBridgingRetain(@"native-string");
+}
+static CFDictionaryRef nativeVersion(void) {
+    return CFBridgingRetain(@{@"ProductVersion":@"native-version",@"ProductBuildVersion":@"native-build",@"unrelated":@"keep"});
+}
+static int sysctlCalls;
+static int nativeSysctlByName(const char *name,void *out,size_t *length,void *input,size_t inputLength) {
+    (void)name;(void)out;(void)length;(void)input;(void)inputLength;sysctlCalls++;return 77;
+}
+static int nativeSysctl(int *name,u_int count,void *out,size_t *length,void *input,size_t inputLength) {
+    (void)name;(void)count;return nativeSysctlByName(NULL,out,length,input,inputLength);
+}
 int main(int argc,char **argv) {
     @autoreleasepool {
         if(argc!=2)return 2;
         NSString *path=@(argv[1]);
         NSDictionary *profile=MKSGenerateProfile();
 #if defined(MKS_ROOTHIDE)
+        CHECK(useStoreKitIdentityReads(@"storekitd"));
+        for (NSString *name in @[@"AppStore",@"akd",@"accountsd",@"amsaccountsd",@"appstored",@"itunesstored",@"storekitd-helper",@""])
+            CHECK(!useStoreKitIdentityReads(name));
+        CHECK(!useStoreKitIdentityReads(nil));
         NSDictionary *generated=profile[@"values"];
         CHECK([generated[@"ProductType"] isEqual:@"iPhone16,2"]);
         CHECK([generated[@"HWModelStr"] isEqual:@"D84AP"]);
@@ -53,6 +73,27 @@ int main(int argc,char **argv) {
 #endif
         CHECK(MKSWriteProfile(profile,path,NULL));
         store=[[MKSProfileStore alloc] initWithPaths:@[path]];
+        orig_MGGetStringAnswer=nativeString;
+        for (int i=0;i<2;i++) {
+            CFStringRef string=my_MGGetStringAnswer(CFSTR("ProductType"));
+            CHECK([(__bridge id)string isEqual:MKSMGValue(profile,@"ProductType")]);
+            if (string) CFRelease(string);
+        }
+        orig_CFCopySystemVersionDictionary=nativeVersion;
+        CFDictionaryRef version=my_CFCopySystemVersionDictionary();
+        CHECK([((__bridge NSDictionary *)version)[@"ProductVersion"] isEqual:MKSMGValue(profile,@"ProductVersion")]);
+        CHECK([((__bridge NSDictionary *)version)[@"ProductBuildVersion"] isEqual:MKSMGValue(profile,@"BuildVersion")]);
+        CHECK([((__bridge NSDictionary *)version)[@"unrelated"] isEqual:@"keep"]);
+        CFRelease(version);
+        orig_sysctlbyname=nativeSysctlByName;orig_sysctl=nativeSysctl;sysctlCalls=0;
+        char buffer[128]={0};size_t length=sizeof(buffer);
+        CHECK(my_sysctlbyname("hw.machine",buffer,&length,NULL,0)==0);
+        CHECK([@(buffer) isEqual:MKSMGValue(profile,@"ProductType")] && sysctlCalls==0);
+        length=sizeof(buffer);int mib[]={CTL_KERN,KERN_OSVERSION};
+        CHECK(my_sysctl(mib,2,buffer,&length,NULL,0)==0);
+        CHECK([@(buffer) isEqual:MKSMGValue(profile,@"BuildVersion")] && sysctlCalls==0);
+        CHECK(my_sysctlbyname("hw.machine",NULL,NULL,buffer,1)==77 && sysctlCalls==1);
+        CHECK(my_sysctlbyname("unrelated",NULL,NULL,NULL,0)==77 && sysctlCalls==2);
 #if defined(MKS_ROOTHIDE)
         orig_MGCopyAnswerInternal=primingAnswer;nativeCalls=0;primeNativeIdentityCache();
         CHECK(nativeCalls==5 && readingProfile==0);
@@ -132,9 +173,47 @@ int main(int argc,char **argv) {
             if(answer)CFRelease(answer);
         }
         orig_IORegistryEntrySearchCFProperty=missingSearch;
+        storeKitIdentityReads=YES;
+        orig_IORegistryEntrySearchCFProperty=presentSearch;
+        orig_IORegistryEntryCreateCFProperty=presentCreate;
+        for (NSString *key in @[@"IOPlatformUUID",@"serial-number",@"board-id"]) {
+            CFTypeRef native=presentSearch(0,NULL,(__bridge CFStringRef)key,NULL,0);
+            id expected=[key isEqual:@"board-id"]?(__bridge id)native:MKSRegistryValue(profile,key,(__bridge id)native);
+            CFTypeRef patched=my_IORegistryEntrySearchCFProperty(0,"IOService",(__bridge CFStringRef)key,NULL,0);
+            CHECK([(__bridge id)patched isEqual:expected]);
+            if (patched) CFRelease(patched);
+            patched=my_IORegistryEntryCreateCFProperty(0,(__bridge CFStringRef)key,NULL,0);
+            CHECK([(__bridge id)patched isEqual:expected]);
+            if (patched) CFRelease(patched);
+            if (native) CFRelease(native);
+        }
+        storeKitIdentityReads=NO;
+        orig_IORegistryEntrySearchCFProperty=missingSearch;
 #endif
         orig_MGCopyAnswerInternal=missingAnswer;
         CHECK(MKSWriteProfile(@{@"schemaVersion":@2,@"enabled":@NO,@"name":@"off",@"values":@{}},path,NULL));
+        CFStringRef restoredString=my_MGGetStringAnswer(CFSTR("ProductType"));
+        CHECK([(__bridge id)restoredString isEqual:@"native-string"]);CFRelease(restoredString);
+        version=my_CFCopySystemVersionDictionary();
+        CHECK([((__bridge NSDictionary *)version)[@"ProductVersion"] isEqual:@"native-version"]);CFRelease(version);
+        CHECK(my_sysctlbyname("hw.machine",buffer,&length,NULL,0)==77 && sysctlCalls==3);
+        CHECK(my_sysctl(mib,2,buffer,&length,NULL,0)==77 && sysctlCalls==4);
+#if defined(MKS_ROOTHIDE)
+        storeKitIdentityReads=YES;
+        orig_IORegistryEntrySearchCFProperty=presentSearch;
+        for (NSString *key in @[@"IOPlatformUUID",@"serial-number"]) {
+            CFTypeRef native=presentCreate(0,(__bridge CFStringRef)key,NULL,0);
+            CFTypeRef restored=my_IORegistryEntryCreateCFProperty(0,(__bridge CFStringRef)key,NULL,0);
+            CHECK([(__bridge id)restored isEqual:(__bridge id)native]);
+            if (restored) CFRelease(restored);
+            restored=my_IORegistryEntrySearchCFProperty(0,"IOService",(__bridge CFStringRef)key,NULL,0);
+            CHECK([(__bridge id)restored isEqual:(__bridge id)native]);
+            if (restored) CFRelease(restored);
+            if (native) CFRelease(native);
+        }
+        storeKitIdentityReads=NO;
+        orig_IORegistryEntrySearchCFProperty=missingSearch;
+#endif
         type=99;
         CHECK(my_MGCopyAnswerInternal(CFSTR("SerialNumber"),&type)==NULL && type==0);
         searchCalls=0;
