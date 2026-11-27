@@ -3,6 +3,7 @@
 #import "../common/MKSHTTP.h"
 #import "../common/MKSKeychainIPC.h"
 #import "MKSAPIDocsController.h"
+#import "MKSProfileEditorController.h"
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -28,6 +29,7 @@ static void do_respring(void) {
 @property (nonatomic, strong) UIButton *cleanupButton;
 @property (nonatomic, strong) UIButton *spoofButton;
 @property (nonatomic, strong) UIButton *restoreButton;
+@property (nonatomic, strong) UIButton *customButton;
 @property (nonatomic) BOOL cleanupRunning;
 @end
 
@@ -105,6 +107,26 @@ static void do_respring(void) {
     self.cleanupButton.titleLabel.font=[UIFont boldSystemFontOfSize:16];
     [self.cleanupButton addTarget:self action:@selector(confirmKeychainCleanup) forControlEvents:UIControlEventTouchUpInside];
     [self.view addSubview:self.cleanupButton];
+    self.customButton=[UIButton buttonWithType:UIButtonTypeSystem];
+    self.customButton.frame=CGRectMake(20,580,self.view.bounds.size.width-40,48);
+    self.customButton.autoresizingMask=UIViewAutoresizingFlexibleWidth;
+    [self.customButton setTitle:@"自定义 iOS 版本" forState:UIControlStateNormal];
+    self.customButton.titleLabel.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody];
+    self.customButton.accessibilityIdentifier=@"mks.customParameters";
+    [self.customButton addTarget:self action:@selector(openCustomParameters) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:self.customButton];
+}
+- (void)openCustomParameters {
+    NSError *error=nil;NSDictionary *profile=[self currentProfile];
+    if (![profile[@"enabled"] boolValue]) profile=MKSGenerateProfileUsingSettings(MKSGenerationSettingsPath(),&error);
+    // Broken saved generation rules can be repaired from the editor.
+    if (!profile) profile=MKSGenerateProfile();
+    __weak typeof(self) weakSelf=self;
+    MKSProfileEditorController *editor=[[MKSProfileEditorController alloc] initWithProfile:profile apply:^BOOL(NSDictionary *custom) {
+        if (![weakSelf writeConfig:custom]) return NO;
+        [weakSelf restartAfterSave];return YES;
+    }];
+    [self.navigationController pushViewController:editor animated:YES];
 }
 - (void)openAPIDocs {
     [self.navigationController pushViewController:[MKSAPIDocsController new] animated:YES];
@@ -128,7 +150,7 @@ static void do_respring(void) {
     NSData *data=[NSJSONSerialization dataWithJSONObject:p[@"values"] options:NSJSONWritingPrettyPrinted|NSJSONWritingSortedKeys error:NULL];
     NSString *json=[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @"（参数读取失败）";
     NSArray<NSString *> *errors=MKSProfileHTMLRuleErrors(p);
-    NSString *result=errors.count?[@"未通过：" stringByAppendingString:[errors componentsJoinedByString:@"、"]]:@"认证通过";
+    NSString *result=errors.count?[@"未通过：" stringByAppendingString:[errors componentsJoinedByString:@"、"]]:@"校验通过";
     return [NSString stringWithFormat:@"HTML 参数规则：%@\n%@\n\n%@",result,
         MKSProfileHTMLParameters(p) ?: @"（参数格式错误）",json];
 }
@@ -145,7 +167,12 @@ static void do_respring(void) {
     return YES;
 }
 - (void)doSpoof {
-    NSDictionary *profile=MKSGenerateProfile();
+    NSError *error=nil;NSDictionary *profile=MKSGenerateProfileUsingSettings(MKSGenerationSettingsPath(),&error);
+    if (!profile) {
+        UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"生成规则无效" message:error.localizedDescription preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];return;
+    }
     NSArray<NSString *> *errors=MKSProfileHTMLRuleErrors(profile);
     if(errors.count) {
         UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"参数未通过 HTML 规则"
@@ -165,6 +192,7 @@ static void do_respring(void) {
 - (void)restartAfterSave {
     self.status.text=@"配置已保存，正在重启桌面…";
     self.spoofButton.enabled=NO;self.restoreButton.enabled=NO;self.cleanupButton.enabled=NO;
+    self.customButton.enabled=NO;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,500*NSEC_PER_MSEC),dispatch_get_main_queue(),^{do_respring();});
 }
 - (void)confirmKeychainCleanup {
@@ -182,12 +210,14 @@ static void do_respring(void) {
     if(self.cleanupRunning) return;
     self.cleanupRunning=YES;
     self.cleanupButton.enabled=NO;self.spoofButton.enabled=NO;self.restoreButton.enabled=NO;
+    self.customButton.enabled=NO;
     [self.cleanupButton setTitle:@"正在备份并清理…" forState:UIControlStateNormal];
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{
         NSDictionary *result=MKSRequestKeychainClean();
         dispatch_async(dispatch_get_main_queue(),^{
             self.cleanupRunning=NO;
             self.cleanupButton.enabled=YES;self.spoofButton.enabled=YES;self.restoreButton.enabled=YES;
+            self.customButton.enabled=YES;
             [self.cleanupButton setTitle:@"清理全局 Keychain" forState:UIControlStateNormal];
             BOOL committed=[result[@"committed"] boolValue];
             BOOL unknown=[result[@"outcomeUnknown"] boolValue];

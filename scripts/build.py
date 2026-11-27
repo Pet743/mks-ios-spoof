@@ -88,7 +88,7 @@ def sdk_flags(sdk):
 def build_app(build, flags, link, simulator=False):
     app = build / 'MKS.app'
     app.mkdir(parents=True, exist_ok=True)
-    run(flags + ['-fobjc-arc', 'app/main.m', 'app/MKSAPIDocsController.m',
+    run(flags + ['-fobjc-arc', 'app/main.m', 'app/MKSAPIDocsController.m', 'app/MKSProfileEditorController.m',
                  'common/MKSHTTP.m', 'common/MKSProfile.m', 'common/MKSKeychainIPC.m',
                  '-framework', 'UIKit', '-framework', 'Foundation', *link, '-o', app / 'MKS'])
     info = plistlib.loads((ROOT / 'app/Info.plist').read_bytes())

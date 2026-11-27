@@ -1,19 +1,27 @@
 # MKS 改机
 
-**本地候选 1.15.14 / 130：** 修复 RootHide 原机切换改机后的 USB 配对失效，配对服务保留原生身份且不再随改机刷新。真实 iOS 16.4.1 三轮改机/还原、18 次配对/AFC 检查通过，StoreKit 153 项读数匹配；主界面新增版本号和构建号。[修复与验收](docs/usb-trust-fix.md)。
+**预发布 1.16.0 / 132：** 自定义只选择 iOS 16、17 或 18，小版本、build 及其余参数自动生成并逐条执行 HTML 规则校验。保存偏好后 App 和 HTTP 共用；当前生效参数不会因预览而改变。[使用和校验依据](docs/custom-ios-version.md)。
 
-**本地候选 1.15.13 / 129：** 修正 RootHide 应用内购买服务 `storekitd` 的注入、刷新及身份读取覆盖。真机进程内采样通过，实际付款后台判定待原应用复测。[现场及验证记录](docs/storekit-payment-investigation.md)。以下 1.15.12 为原发布记录。
+**稳定发布 1.15.14 / 130：** 修复 RootHide 原机切换改机后的 USB 配对失效，配对服务保留原生身份且不再随改机刷新。真实 iOS 16.4.1 三轮改机/还原、18 次配对/AFC 检查通过，StoreKit 153 项读数匹配；主界面新增版本号和构建号。[修复与验收](docs/usb-trust-fix.md)。
 
-**当前版本 1.15.12 / 128：** 无双重认证测试账号已按“确认退出 → MKS 正常改机 → 一次密码登录 → 重开保持”完成，用户后台核对机型、系统及 IMEI 一致。双重认证账号仍存在验证返回后未登录、需要再次提交密码的问题，本版没有宣称解决这一流程。v1.15.4 原始标签与安装包保留。[完整验收与已知问题](docs/roothide-login-compatibility.md)。
+**历史候选 1.15.13 / 129：** 修正 RootHide 应用内购买服务 `storekitd` 的注入、刷新及身份读取覆盖。真机进程内采样通过，实际付款后台判定待原应用复测。[现场及验证记录](docs/storekit-payment-investigation.md)。以下 1.15.12 为原发布记录。
 
-[下载最新版](https://github.com/Pet743/mks-ios-spoof/releases/latest) · [安装说明](docs/install.md) · [新设备：Mac + USB 快速安装 RootHide](docs/install-usb-roothide.md) · [DPP 对照与复测记录](docs/roothide-login-compatibility.md)。
+**历史版本 1.15.12 / 128：** 无双重认证测试账号已按“确认退出 → MKS 正常改机 → 一次密码登录 → 重开保持”完成，用户后台核对机型、系统及 IMEI 一致。双重认证账号仍存在验证返回后未登录、需要再次提交密码的问题，本版没有宣称解决这一流程。v1.15.4 原始标签与安装包保留。[完整验收与已知问题](docs/roothide-login-compatibility.md)。
 
-自用 iOS 越狱工具，当前发布版本 **1.15.12**，提供 Rootless 和 RootHide 两个安装包。提供一键改机、恢复原机、全局 Keychain 清理，以及同一 Wi-Fi 内的 HTTP 调用。无卡密、激活或远程授权。
+[下载 1.16.0 预发布](https://github.com/Pet743/mks-ios-spoof/releases/tag/v1.16.0) · [下载稳定版](https://github.com/Pet743/mks-ios-spoof/releases/latest) · [安装说明](docs/install.md) · [新设备：Mac + USB 快速安装 RootHide](docs/install-usb-roothide.md) · [DPP 对照与复测记录](docs/roothide-login-compatibility.md)。
+
+自用 iOS 越狱工具，当前预发布版本 **1.16.0**（稳定发布为 **1.15.14**），提供 Rootless 和 RootHide 两个安装包。提供一键改机、恢复原机、全局 Keychain 清理，以及同一 Wi-Fi 内的 HTTP 调用。无卡密、激活或远程授权。
 
 | 越狱环境 | DEB 架构 | 下载 |
 | --- | --- | --- |
-| Rootless（固定 `/var/jb`） | `iphoneos-arm64` | [Rootless DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.15.12/mks_1.15.12_rootless_iphoneos-arm64.deb) |
-| RootHide（RootHide bootstrap + ElleKit） | `iphoneos-arm64e` | [RootHide DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.15.12/mks_1.15.12_roothide_iphoneos-arm64e.deb) |
+| Rootless（固定 `/var/jb`） | `iphoneos-arm64` | [Rootless DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.16.0/mks_1.16.0_rootless_iphoneos-arm64.deb) |
+| RootHide（RootHide bootstrap + ElleKit） | `iphoneos-arm64e` | [RootHide DEB](https://github.com/Pet743/mks-ios-spoof/releases/download/v1.16.0/mks_1.16.0_roothide_iphoneos-arm64e.deb) |
+
+## 1.16.0 更新与已知问题
+
+只选择 iOS 16、17、18，小版本和 build 按离线固件表配套生成，其他参数自动生成。App 与 HTTP 共用大版本偏好；升级保留当前参数和绑定。详见[版本说明](docs/releases/v1.16.0.md)。
+
+**应用内购问题尚未解决。** 用户在同一台 RootHide 设备报告还原后可购买、启用改机后购买失败。本版未通过改机状态下的实际内购验收；本地 HTML 规则校验通过不代表 Apple 登录、购买或审核通过。具体失败原因仍未定位，因此本版标记为预发布。
 
 ## 1.15.12 更新
 
@@ -32,6 +40,7 @@ RootHide 包仅排除 akd 的直接注入，保留 AppStore、accountsd、amsacc
 使用 Sileo 等越狱包管理器安装与环境对应的完整 DEB，依赖为本环境的 ElleKit；RootHide 还需要 RootHide 核心包。DEB 包含 MKS App、注入库和后台服务，安装后打开桌面的 MKS。巨魔商店单装独立 IPA 缺少注入库和后台服务，完整功能需要安装 DEB。[具体步骤](docs/install.md)。
 
 - **一键改机**：生成并保存参数，然后自动重启桌面，手机短暂黑屏。
+- **自定义 iOS 版本**：选择 16、17、18，预览后应用，或保存为后续 App／HTTP 改机偏好。
 - **恢复原机**：写入停用配置，然后自动重启桌面。
 - **清理全局 Keychain**：独立确认后备份并按参考插件规则清理，不重启桌面。
 - **右上角「接口文档」**：查看本机 Wi-Fi 地址、设备 UDID 路由、访问令牌与三个功能的 curl 示例，可一键复制。

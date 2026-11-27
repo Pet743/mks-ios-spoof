@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#define MKS_CUSTOM_PROFILE_API 1
 
 NS_ASSUME_NONNULL_BEGIN
 FOUNDATION_EXPORT NSString *MKSConfigPath(void);
@@ -10,6 +11,11 @@ FOUNDATION_EXPORT NSDictionary * _Nullable MKSParseLegacy(NSString *line, NSErro
 FOUNDATION_EXPORT NSData * _Nullable MKSEncodeProfile(NSDictionary *profile, NSError **error);
 FOUNDATION_EXPORT BOOL MKSWriteProfile(NSDictionary *profile, NSString *path, NSError **error);
 FOUNDATION_EXPORT NSDictionary *MKSGenerateProfile(void);
+FOUNDATION_EXPORT NSString *MKSGenerationSettingsPath(void);
+FOUNDATION_EXPORT NSDictionary * _Nullable MKSGenerateProfileUsingSettings(NSString *path, NSError **error);
+FOUNDATION_EXPORT BOOL MKSSaveIOSMajor(NSInteger major, NSString *path, NSError **error);
+FOUNDATION_EXPORT NSDictionary * _Nullable MKSGenerateProfileForIOSMajor(NSInteger major, NSError **error);
+FOUNDATION_EXPORT NSString * _Nullable MKSBuildForVersion(NSString *product, NSString *version);
 FOUNDATION_EXPORT NSString * _Nullable MKSProfileHTMLParameters(NSDictionary *profile);
 FOUNDATION_EXPORT NSArray<NSString *> *MKSProfileHTMLRuleErrors(NSDictionary *profile);
 FOUNDATION_EXPORT id _Nullable MKSMGValue(NSDictionary * _Nullable profile, NSString *key);

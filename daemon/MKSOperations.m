@@ -28,7 +28,7 @@ NSDictionary *MKSOperationStatus(void) {
     return @{@"ok":@YES,@"apiVersion":@1,@"deviceConfigured":@((BOOL)(device!=nil)),
         @"environment":@{@"jailbreak":environment,@"layoutVersion":@1},
         @"capabilities":@{@"spoof":@YES,@"restore":@YES,@"keychainClean":@YES},
-        @"installationId":MKSHTTPInstallationID() ?: NSNull.null,@"version":@"1.15.14",@"enabled":@([profile[@"enabled"] boolValue]),
+        @"installationId":MKSHTTPInstallationID() ?: NSNull.null,@"version":@"1.16.0",@"enabled":@([profile[@"enabled"] boolValue]),
         @"profileValid":@((BOOL)(profile!=nil)),@"deviceId":device ?: NSNull.null};
 }
 NSDictionary *MKSPerformOperation(NSString *action) {
@@ -42,12 +42,13 @@ NSDictionary *MKSPerformOperation(NSString *action) {
 #endif
         }
         if(![@[@"spoof",@"restore"] containsObject:action]) return @{@"ok":@NO,@"error":@"unknown_action"};
-        NSDictionary *profile=[action isEqual:@"spoof"]?MKSGenerateProfile():
+        NSError *error=nil;
+        NSDictionary *profile=[action isEqual:@"spoof"]?MKSGenerateProfileUsingSettings(MKSGenerationSettingsPath(),&error):
             @{@"schemaVersion":@2,@"enabled":@NO,@"name":@"已停用",@"values":@{}};
+        if (!profile) return @{@"ok":@NO,@"profileSaved":@NO,@"error":@"generation_settings_invalid",@"stage":@"profile_generate",@"retryable":@NO,@"outcomeUnknown":@NO};
         if([action isEqual:@"spoof"] && MKSProfileHTMLRuleErrors(profile).count)
             return @{@"ok":@NO,@"profileSaved":@NO,@"error":@"profile_html_validation_failed",
                 @"stage":@"profile_validate",@"retryable":@NO,@"outcomeUnknown":@NO};
-        NSError *error=nil;
         if(!MKSWriteProfile(profile,profilePath(),&error)) return @{@"ok":@NO,@"profileSaved":@NO,@"error":@"profile_save_failed",@"stage":@"profile_save",@"retryable":@NO,@"outcomeUnknown":@NO};
         // Atomic writes by the root daemon must remain writable by the mobile UI.
 #ifndef MKS_HTTP_TEST

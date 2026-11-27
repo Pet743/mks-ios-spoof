@@ -1,5 +1,6 @@
 #import "MKSProfile.h"
 #include "MKSPaths.h"
+#include "MKSVersionBuilds.h"
 #include <TargetConditionals.h>
 #include <sys/stat.h>
 #include <errno.h>
@@ -214,6 +215,108 @@ NSArray<NSString *> *MKSProfileHTMLRuleErrors(NSDictionary *profile) {
     if(!matches(version,@"^(16|17|18)\\.[0-9]+(\\.[0-9]+)?$")) [errors addObject:@"ios_version"];
     return errors;
 }
+NSString *MKSGenerationSettingsPath(void) {
+#ifdef MKS_HTTP_TEST
+    NSString *config=@(getenv("MKS_TEST_CONFIG"));
+#else
+    NSString *config=MKSConfigPath();
+#endif
+    return [[config stringByDeletingLastPathComponent] stringByAppendingPathComponent:@"generation-options.json"];
+}
+NSString *MKSBuildForVersion(NSString *product,NSString *version) {
+    if (![product isKindOfClass:NSString.class] || ![version isKindOfClass:NSString.class]) return nil;
+    return MKSVersionBuildCatalog()[product][version];
+}
+static NSDictionary *regionSuffixes(void) {
+    return @{@"US":@"LL/A",@"LL":@"LL/A",@"CA":@"CL/A",@"CL":@"CL/A",@"DE":@"DN/A",@"DN":@"DN/A",
+             @"CN":@"CH/A",@"CH":@"CH/A",@"HK":@"ZP/A",@"ZP":@"ZP/A"};
+}
+static NSDictionary *checkedCustomProfile(NSDictionary *profile,NSError **error) {
+    if (!validate(profile,error)) return nil;
+    if (![profile[@"enabled"] boolValue]) { fail(error,@"自定义参数必须启用。");return nil; }
+    NSArray *errors=MKSProfileHTMLRuleErrors(profile);
+    if (errors.count) { fail(error,[@"HTML 规则未通过：" stringByAppendingString:[errors componentsJoinedByString:@"、"]]);return nil; }
+    return profile;
+}
+static NSDictionary *MKSProfileWithCustomValues(NSDictionary *base,NSDictionary *values,NSError **error) {
+    if (![values isKindOfClass:NSDictionary.class]) { fail(error,@"自定义值必须为字典。");return nil; }
+    NSMutableDictionary *v=[base[@"values"] mutableCopy];
+    if (!v) { fail(error,@"需要完整的基础参数。");return nil; }
+    for (id key in values) {
+        id value=values[key];
+        if (![MKSValueKeys() containsObject:key] || ![value isKindOfClass:NSString.class]) {
+            fail(error,@"自定义参数包含未知字段或非字符串值。");return nil;
+        }
+        v[key]=value;
+    }
+    // Keep the exported 14 fields and the extra JSON aliases synchronized.
+    if (values[@"SerialNumber"]) v[@"MLBSerialNumber"]=v[@"SerialNumber"];
+    if (values[@"InternationalMobileEquipmentIdentity"]) {
+        NSString *imei=v[@"InternationalMobileEquipmentIdentity"];
+        if (imei.length==15) v[@"InternationalMobileEquipmentIdentity2"]=[imei substringToIndex:14];
+    }
+    if (values[@"WifiAddress"]) v[@"EthernetMacAddress"]=v[@"WifiAddress"];
+    if (values[@"UniqueChipID"]) v[@"DieId"]=v[@"UniqueChipID"];
+    if (values[@"HardwarePlatform"]) {
+        NSString *chip=[v[@"HardwarePlatform"] uppercaseString];
+        v[@"HardwarePlatform"]=chip;
+        if (chip.length>1) v[@"ChipID"]=[@"0x" stringByAppendingString:[chip substringFromIndex:1]];
+    }
+    if (values[@"RegionCode"]) {
+        NSString *suffix=regionSuffixes()[v[@"RegionCode"]];
+        if (!suffix) { fail(error,@"地区必须为 US、CA、DE、CN、HK 或对应型号地区码。");return nil; }
+        v[@"RegionInfo"]=suffix;
+    }
+    return checkedCustomProfile(@{@"schemaVersion":@2,@"enabled":@YES,@"name":@"自定义参数",@"values":v},error);
+}
+NSDictionary *MKSGenerateProfileForIOSMajor(NSInteger major,NSError **error) {
+    if (major<16 || major>18) { fail(error,@"请选择 iOS 16、17 或 18。");return nil; }
+    // Pick real version/build pairs whose strings also satisfy the supplied HTML.
+    // The older model supplies iOS 16; the existing default model supplies 17/18.
+    NSString *product=major==16?@"iPhone15,2":@"iPhone16,2";
+    NSDictionary *catalog=MKSVersionBuildCatalog()[product];
+    NSMutableArray *versions=[NSMutableArray new];
+    NSString *prefix=[NSString stringWithFormat:@"%ld.",(long)major];
+    for (NSString *version in catalog) {
+        if ([version hasPrefix:prefix] && matches(catalog[version],@"^[0-9]{2}[A-Z][0-9]{2,3}$")) [versions addObject:version];
+    }
+    [versions sortUsingSelector:@selector(compare:)];
+    if (!versions.count) { fail(error,@"这个大版本没有符合 HTML 规则的小版本/build 组合。");return nil; }
+    NSString *version=versions[arc4random_uniform((uint32_t)versions.count)];
+    NSDictionary *edits=@{@"ProductType":product,@"ProductVersion":version,@"BuildVersion":catalog[version],
+        @"HWModelStr":major==16?@"D73AP":@"D84AP",@"HardwarePlatform":major==16?@"T8120":@"T8130",
+        @"ModelNumber":major==16?@"MQ0G3LL/A":@"MU773LL/A",@"RegionCode":@"LL",@"RegionInfo":@"LL/A"};
+    return MKSProfileWithCustomValues(MKSGenerateProfile(),edits,error);
+}
+NSDictionary *MKSGenerateProfileUsingSettings(NSString *path,NSError **error) {
+    struct stat st;
+    if (lstat(path.fileSystemRepresentation,&st)!=0) {
+        if (errno==ENOENT) return MKSGenerateProfile();
+        fail(error,@"生成规则读取失败。");return nil;
+    }
+    if (!S_ISREG(st.st_mode) || st.st_size<=0 || st.st_size>65536) { fail(error,@"生成规则文件无效。");return nil; }
+    NSData *data=[NSData dataWithContentsOfFile:path];
+    id settings=data?[NSJSONSerialization JSONObjectWithData:data options:0 error:NULL]:nil;
+    if (![settings isKindOfClass:NSDictionary.class] || [settings count]!=2 ||
+        ![settings[@"schemaVersion"] isKindOfClass:NSNumber.class] ||
+        CFGetTypeID((__bridge CFTypeRef)settings[@"schemaVersion"])==CFBooleanGetTypeID() ||
+        ![settings[@"schemaVersion"] isEqual:@1] || ![settings[@"iosMajor"] isKindOfClass:NSNumber.class] ||
+        CFGetTypeID((__bridge CFTypeRef)settings[@"iosMajor"])==CFBooleanGetTypeID() ||
+        ![@[@16,@17,@18] containsObject:settings[@"iosMajor"]]) {
+        fail(error,@"生成规则无效，请在自定义 iOS 版本中选择 16、17 或 18 后重新保存。");return nil;
+    }
+    return MKSGenerateProfileForIOSMajor([settings[@"iosMajor"] integerValue],error);
+}
+BOOL MKSSaveIOSMajor(NSInteger major,NSString *path,NSError **error) {
+    if (!MKSGenerateProfileForIOSMajor(major,error)) return NO;
+    NSDictionary *settings=@{@"schemaVersion":@1,@"iosMajor":@(major)};
+    NSData *data=[NSJSONSerialization dataWithJSONObject:settings options:NSJSONWritingPrettyPrinted|NSJSONWritingSortedKeys error:error];
+    if (!data || ![data writeToFile:path options:NSDataWritingAtomic error:error]) return NO;
+    if (chmod(path.fileSystemRepresentation,0644)!=0) return fail(error,@"规则已保存，但设置读取权限失败。");
+    if (![data isEqual:[NSData dataWithContentsOfFile:path]]) return fail(error,@"生成规则回读不一致。");
+    return YES;
+}
+
 id MKSMGValue(NSDictionary *p, NSString *key) {
     if (![p[@"enabled"] boolValue]) return nil;
 #if defined(MKS_ROOTHIDE)
